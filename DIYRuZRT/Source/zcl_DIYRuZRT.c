@@ -689,26 +689,63 @@ void DIYRuZRT_HalKeyInit( void )
 {
   /* Сбрасываем сохраняемое состояние кнопок в 0 */
   halKeySavedKeys = 0;
+  // 触摸引脚默认 HIGH（上拉），初始化为全 1
+  halKeySavedTouch = 0xFF;
 
+  // S1 配网按键初始化
   PUSH1_SEL &= ~(PUSH1_BV); /* Выставляем функцию пина - GPIO */
   PUSH1_DIR &= ~(PUSH1_BV); /* Выставляем режим пина - Вход */
 
   PUSH1_ICTL &= ~(PUSH1_ICTLBIT); /* Не генерируем прерывания на пине */
   PUSH1_IEN &= ~(PUSH1_IENBIT);   /* Очищаем признак включения прерываний */
-  // TOUCH1~4 的初始化在后续完善
+
+  // TOUCH1~4 触摸输入初始化（PUSH2~5 对应 P0_4~P0_7）
+  PUSH2_SEL &= ~(PUSH2_BV); /* GPIO 功能 */
+  PUSH2_DIR &= ~(PUSH2_BV); /* 输入方向 */
+  PUSH3_SEL &= ~(PUSH3_BV);
+  PUSH3_DIR &= ~(PUSH3_BV);
+  PUSH4_SEL &= ~(PUSH4_BV);
+  PUSH4_DIR &= ~(PUSH4_BV);
+  PUSH5_SEL &= ~(PUSH5_BV);
+  PUSH5_DIR &= ~(PUSH5_BV);
 }
 
 // Считывание кнопок
 void DIYRuZRT_HalKeyPoll (void)
 {
   uint8 keys = 0;
+  uint8 touch;
 
-  // нажата кнопка 1 ?
+  // S1 配网按键
   if (HAL_PUSH_BUTTON1())
   {
     keys |= HAL_KEY_SW_1;
   }
-  // 触摸按键检测在后续完善
+
+  // 触摸按键状态检测（低电平有效）
+  touch = 0;
+  if (TOUCH_PRESSED(1)) touch |= BV(0);
+  if (TOUCH_PRESSED(2)) touch |= BV(1);
+  if (TOUCH_PRESSED(3)) touch |= BV(2);
+  if (TOUCH_PRESSED(4)) touch |= BV(3);
+
+  // 检测下降沿：上次 HIGH → 本次 LOW（触摸按下）
+  {
+    uint8 falling = (halKeySavedTouch & ~touch) & 0x0F;
+    if (falling)
+    {
+      uint8 ch;
+      for (ch = 0; ch < 4; ch++)
+      {
+        if (falling & BV(ch))
+        {
+          // 切换对应通道继电器状态
+          updateRelay(ch, !((RELAY_STATE >> ch) & 1));
+        }
+      }
+    }
+  }
+  halKeySavedTouch = touch;
 
   if (keys == halKeySavedKeys)
   {
