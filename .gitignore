@@ -51,7 +51,7 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
-DIYRuZRT/CC2530/RouterEB/
-DIYRuZRT/CC2530/CoordinatorEB/
-DIYRuZRT/CC2530/EndDeviceEB/
-DIYRuZRT/CC2530/settings/
+DIYRuZRT/CC2530DB/RouterEB/
+DIYRuZRT/CC2530DB/CoordinatorEB/
+DIYRuZRT/CC2530DB/EndDeviceEB/
+DIYRuZRT/CC2530DB/settings/

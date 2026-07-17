@@ -1,0 +1,294 @@
+name: Build Firmware
+run-name: ${{ inputs.workflow_name || 'Build Firmware' }}
+# 编译 CC2530 + Z-Stack 3.0.2 固件（IAR EW8051）
+#
+# 用途：
+#   - 在 self-hosted Windows runner 上使用 IAR Embedded Workbench for 8051 编译固件
+#   - 生成 hex + bin 两种格式的固件产物
+#   - 下载 artifact 用于本地烧录测试
+#
+# 前置条件：
+#   1. 配置一台 Windows self-hosted runner，标签为 `windows-iar`
+#   2. runner 上安装 IAR Embedded Workbench for 8051（支持 Z-Stack 3.0.2 的版本，如 10.10）
+#   3. 在仓库 Settings → Secrets and variables → Actions 中添加：
+#      - IAR_INSTALL_DIR：IAR 安装路径（如 C:\Program Files\IAR Systems\Embedded Workbench 8.0\8051）
+#        注意：此路径下应包含 common\bin\iarbuild.exe
+#   4. runner 上安装 Python 3.x（用于 hex→bin 转换）
+#
+# 使用方法：
+#   1. GitHub → Actions → "Build Firmware" → Run workflow
+#   2. 选择编译配置（RouterEB / CoordinatorEB / EndDeviceEB）
+#   3. 输入分支名（默认 master）
+#   4. （可选）输入 commit SHA，留空使用分支最新提交
+#   5. （可选）输入 artifact 名称标识本次构建
+#   6. 等待构建完成，在 Summary 页面下载 artifact
+#   7. 使用 CC Debugger + 烧录工具（如 TI Flash Programmer）烧录 hex 或 bin
+on:
+  workflow_dispatch:
+    inputs:
+      workflow_name:
+        description: '本次构建任务名称（用于标识）'
+        required: false
+        default: 'Build Firmware'
+        type: string
+      configuration:
+        description: '编译配置（RouterEB=路由器，CoordinatorEB=协调器，EndDeviceEB=终端设备）'
+        required: true
+        default: 'RouterEB'
+        type: choice
+        options:
+          - RouterEB
+          - CoordinatorEB
+          - EndDeviceEB
+      branch:
+        description: '要构建的分支（例如：master）'
+        required: true
+        default: 'master'
+        type: string
+      commit:
+        description: '指定 commit SHA（留空则使用分支最新提交）'
+        required: false
+        default: ''
+        type: string
+      artifact_name:
+        description: '自定义 artifact 名称（留空则自动生成）'
+        required: false
+        default: ''
+        type: string
+      skip_bin_convert:
+        description: '跳过 hex→bin 转换（仅生成 hex）'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  build-firmware:
+    name: Build ${{ inputs.configuration }}
+    runs-on: [self-hosted, windows-iar]
+    timeout-minutes: 30
+    env:
+      # IAR 安装路径（从 Secrets 读取）
+      IAR_INSTALL_DIR: ${{ secrets.IAR_INSTALL_DIR }}
+      # 项目工作区文件相对路径
+      EWW_PATH: DIYRuZRT/CC2530DB/DIYRuZRT.eww
+      EWP_PATH: DIYRuZRT/CC2530DB/DIYRuZRT.ewp
+      # 编译输出目录（相对于 .ewp 文件）
+      OUTPUT_DIR: DIYRuZRT/CC2530DB/${{ inputs.configuration }}/Exe
+    steps:
+      - name: Determine ref
+        id: ref
+        shell: pwsh
+        run: |
+          if ("${{ inputs.commit }}" -ne "") {
+            Write-Host "Using commit: ${{ inputs.commit }}"
+            "ref=${{ inputs.commit }}" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            Write-Host "Using branch: ${{ inputs.branch }}"
+            "ref=${{ inputs.branch }}" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+
+      - name: Record build start time
+        id: build_time
+        shell: pwsh
+        run: |
+          $tz = [System.TimeZoneInfo]::FindSystemTimeZoneById("China Standard Time")
+          $start = [System.TimeZoneInfo]::ConvertTimeFromUtc([DateTime]::UtcNow, $tz)
+          "start=$($start.ToString('yyyy-MM-dd HH:mm:ss')) CST" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.ref.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Determine artifact name
+        id: artifact_name
+        shell: pwsh
+        run: |
+          $shortSha = (git rev-parse --short HEAD)
+          if ("${{ inputs.artifact_name }}" -ne "") {
+            "name=${{ inputs.artifact_name }}" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            "name=${{ inputs.configuration }}-${shortSha}" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+
+      - name: Show build info
+        shell: pwsh
+        run: |
+          Write-Host "=== 构建信息 ==="
+          Write-Host "分支: ${{ inputs.branch }}"
+          Write-Host "Commit: $(git rev-parse HEAD)"
+          Write-Host "Short:  $(git rev-parse --short HEAD)"
+          Write-Host "Author: $(git log -1 --pretty=format:'%an <%ae>')"
+          Write-Host "Date:   $(git log -1 --pretty=format:'%ad')"
+          Write-Host "Subject: $(git log -1 --pretty=format:'%s')"
+          Write-Host "配置: ${{ inputs.configuration }}"
+          Write-Host "IAR 安装路径: $env:IAR_INSTALL_DIR"
+
+      - name: Verify IAR installation
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrEmpty($env:IAR_INSTALL_DIR)) {
+            Write-Error "Secret 'IAR_INSTALL_DIR' 未设置。请在仓库 Settings → Secrets → Actions 中配置 IAR 安装路径。"
+            exit 1
+          }
+          $iarbuild = Join-Path $env:IAR_INSTALL_DIR "common\bin\iarbuild.exe"
+          if (-not (Test-Path $iarbuild)) {
+            Write-Error "未找到 iarbuild.exe: $iarbuild"
+            Write-Host "请确认 IAR_INSTALL_DIR 指向 IAR EW8051 安装根目录（应包含 common\bin\iarbuild.exe）"
+            exit 1
+          }
+          Write-Host "✅ 找到 iarbuild: $iarbuild"
+          & $iarbuild --version 2>&1 | Write-Host
+
+      - name: Build firmware with IAR
+        id: build
+        shell: pwsh
+        run: |
+          $iarbuild = Join-Path $env:IAR_INSTALL_DIR "common\bin\iarbuild.exe"
+          $ewp = Join-Path $env:GITHUB_WORKSPACE $env:EWP_PATH
+
+          Write-Host "=== 开始编译 ==="
+          Write-Host "项目文件: $ewp"
+          Write-Host "编译配置: ${{ inputs.configuration }}"
+          Write-Host ""
+
+          # 调用 iarbuild 编译指定配置
+          & $iarbuild $ewp -build "${{ inputs.configuration }}"
+          $exitCode = $LASTEXITCODE
+
+          Write-Host ""
+          Write-Host "编译退出码: $exitCode"
+
+          if ($exitCode -ne 0) {
+            Write-Error "编译失败，退出码: $exitCode"
+            exit $exitCode
+          }
+
+          # 检查输出文件
+          $outputDir = Join-Path $env:GITHUB_WORKSPACE $env:OUTPUT_DIR
+          $hexFile = Join-Path $outputDir "DIYRuZRT.hex"
+
+          if (-not (Test-Path $hexFile)) {
+            Write-Error "编译成功但未找到 hex 输出文件: $hexFile"
+            Write-Host "输出目录内容:"
+            if (Test-Path $outputDir) {
+              Get-ChildItem $outputDir -Recurse | Format-Table FullName, Length
+            } else {
+              Write-Host "  输出目录不存在: $outputDir"
+            }
+            exit 1
+          }
+
+          $hexSize = (Get-Item $hexFile).Length
+          Write-Host "✅ 编译成功"
+          Write-Host "HEX 文件: $hexFile ($hexSize bytes)"
+          "hex_path=$hexFile" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Convert hex to bin
+        if: inputs.skip_bin_convert != true
+        shell: pwsh
+        run: |
+          Write-Host "=== 转换 hex → bin ==="
+          $pip = Get-Command pip -ErrorAction SilentlyContinue
+          if (-not $pip) {
+            Write-Host "安装 Python..."
+            choco install python -y --no-progress 2>&1 | Out-Null
+          }
+          Write-Host "安装 intelhex 库..."
+          pip install intelhex --quiet 2>&1 | Out-Null
+
+          $hexFile = "${{ steps.build.outputs.hex_path }}"
+          $binFile = $hexFile -replace '\.hex$', '.bin'
+
+          # 使用 Python 单行命令转换（避免 heredoc 缩进问题）
+          python -c "from intelhex import IntelHex; ih=IntelHex(r'$hexFile'); ih.tobinfile(r'$binFile'); print(f'BIN size: {ih.maxaddr()+1} bytes')"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "hex→bin 转换失败"
+            exit 1
+          }
+
+          if (-not (Test-Path $binFile)) {
+            Write-Error "hex→bin 转换失败：未生成 bin 文件"
+            exit 1
+          }
+
+          $binSize = (Get-Item $binFile).Length
+          Write-Host "✅ 转换成功: $binFile ($binSize bytes)"
+
+      - name: Prepare artifact directory
+        shell: pwsh
+        run: |
+          $stagingDir = Join-Path $env:RUNNER_TEMP "firmware-artifact"
+          New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
+
+          $outputDir = Join-Path $env:GITHUB_WORKSPACE $env:OUTPUT_DIR
+          $hexFile = Join-Path $outputDir "DIYRuZRT.hex"
+
+          # 复制 hex
+          Copy-Item $hexFile -Destination $stagingDir -Force
+          Write-Host "复制: $(Split-Path $hexFile -Leaf)"
+
+          # 复制 bin（如果存在）
+          $binFile = $hexFile -replace '\.hex$', '.bin'
+          if (Test-Path $binFile) {
+            Copy-Item $binFile -Destination $stagingDir -Force
+            Write-Host "复制: $(Split-Path $binFile -Leaf)"
+          }
+
+          # 复制 map 文件（调试用）
+          $mapFile = Join-Path $outputDir "DIYRuZRT.map"
+          if (Test-Path $mapFile) {
+            Copy-Item $mapFile -Destination $stagingDir -Force
+            Write-Host "复制: $(Split-Path $mapFile -Leaf)"
+          }
+
+          Write-Host ""
+          Write-Host "=== 构建产物 ==="
+          Get-ChildItem $stagingDir | Format-Table Name, Length
+
+          "staging_dir=$stagingDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: diyruzrt-${{ steps.artifact_name.outputs.name }}
+          path: ${{ env.RUNNER_TEMP }}/firmware-artifact/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Output build summary
+        if: always()
+        shell: pwsh
+        run: |
+          $tz = [System.TimeZoneInfo]::FindSystemTimeZoneById("China Standard Time")
+          $end = [System.TimeZoneInfo]::ConvertTimeFromUtc([DateTime]::UtcNow, $tz)
+          $endTime = $end.ToString('yyyy-MM-dd HH:mm:ss')
+
+          $status = if ("${{ job.status }}" -eq 'success') { '✅ 成功' } else { '❌ 失败' }
+          $shortSha = git rev-parse --short HEAD
+
+          $summary = @"
+          ## 📦 固件构建摘要
+
+          **任务名称**: ${{ inputs.workflow_name }}
+          **构建状态**: $status
+          **构建开始**: ${{ steps.build_time.outputs.start }}
+          **构建完成**: $endTime CST
+
+          ### 参数
+          - 配置：`${{ inputs.configuration }}`
+          - 分支：`${{ inputs.branch }}`
+          - Commit：`$shortSha`
+          - Artifact 名称：`${{ steps.artifact_name.outputs.name }}`
+          - 跳过 bin 转换：`${{ inputs.skip_bin_convert && '是' || '否' }}`
+
+          ### 📥 使用方法
+          1. 在 GitHub Actions 页面下载 artifact
+          2. 使用 TI Flash Programmer 或其他工具烧录 `.hex` 或 `.bin` 文件
+
+          ### 🔗 链接
+          - [查看构建日志](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          "@
+
+          Set-Content -Path $env:GITHUB_STEP_SUMMARY -Value $summary -Encoding UTF8
