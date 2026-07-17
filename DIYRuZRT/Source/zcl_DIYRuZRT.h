@@ -11,6 +11,12 @@ extern "C"
 // Номер эндпоинта устройства
 #define DIYRuZRT_ENDPOINT            1
 
+// 4路开关的 Endpoint 编号
+#define DIYRuZRT_ENDPOINT_1           1
+#define DIYRuZRT_ENDPOINT_2           2
+#define DIYRuZRT_ENDPOINT_3           3
+#define DIYRuZRT_ENDPOINT_4           4
+
 // События приложения
 #define DIYRuZRT_EVT_BLINK                0x0001
 #define DIYRuZRT_EVT_LONG                 0x0002
@@ -21,15 +27,31 @@ extern "C"
 // NVM IDs
 #define NV_DIYRuZRT_RELAY_STATE_ID        0x0402
 
-extern SimpleDescriptionFormat_t zclDIYRuZRT_SimpleDesc;
+// 4 个 Endpoint 的 SimpleDescriptor
+extern SimpleDescriptionFormat_t zclDIYRuZRT_SimpleDesc_EP1;
+extern SimpleDescriptionFormat_t zclDIYRuZRT_SimpleDesc_EP2;
+extern SimpleDescriptionFormat_t zclDIYRuZRT_SimpleDesc_EP3;
+extern SimpleDescriptionFormat_t zclDIYRuZRT_SimpleDesc_EP4;
 
 extern CONST zclCommandRec_t zclDIYRuZRT_Cmds[];
 
 extern CONST uint8 zclCmdsArraySize;
 
-// Список атрибутов
-extern CONST zclAttrRec_t zclDIYRuZRT_Attrs[];
-extern CONST uint8 zclDIYRuZRT_NumAttributes;
+// 4 组属性列表
+extern CONST zclAttrRec_t zclDIYRuZRT_Attrs_EP1[];
+extern CONST zclAttrRec_t zclDIYRuZRT_Attrs_EP2[];
+extern CONST zclAttrRec_t zclDIYRuZRT_Attrs_EP3[];
+extern CONST zclAttrRec_t zclDIYRuZRT_Attrs_EP4[];
+extern CONST uint8 zclDIYRuZRT_NumAttributes_EP1;
+extern CONST uint8 zclDIYRuZRT_NumAttributes_EP2;
+extern CONST uint8 zclDIYRuZRT_NumAttributes_EP3;
+extern CONST uint8 zclDIYRuZRT_NumAttributes_EP4;
+
+// 4 路 OnOff 属性变量
+extern uint8 zclDIYRuZRT_OnOff_EP1;
+extern uint8 zclDIYRuZRT_OnOff_EP2;
+extern uint8 zclDIYRuZRT_OnOff_EP3;
+extern uint8 zclDIYRuZRT_OnOff_EP4;
 
 // Атрибуты идентификации
 extern uint16 zclDIYRuZRT_IdentifyTime;

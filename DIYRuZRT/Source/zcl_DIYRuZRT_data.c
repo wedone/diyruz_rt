@@ -6,7 +6,6 @@
 #include "zcl.h"
 #include "zcl_general.h"
 #include "zcl_ha.h"
-#include "zcl_ms.h"
 
 /* TODO: Дополняйте нужные заголовки для соответствующих кластеров
 #include "zcl_poll_control.h"
@@ -41,12 +40,12 @@ const uint16 zclDIYRuZRT_clusterRevision_all = 0x0001;
 const uint8 zclDIYRuZRT_HWRevision = DIYRuZRT_HWVERSION;
 // версия ZCL
 const uint8 zclDIYRuZRT_ZCLVersion = DIYRuZRT_ZCLVERSION;
-// производитель
-const uint8 zclDIYRuZRT_ManufacturerName[] = { 6, 'D','I','Y','R','u','Z' };
-// модель устройства
-const uint8 zclDIYRuZRT_ModelId[] = { 9, 'D','I','Y','R','u','Z', '_', 'R','T' };
-// дата версии
-const uint8 zclDIYRuZRT_DateCode[] = { 8, '2','0','2','0','0','4','0','5' };
+// производитель（借壳 _TZ3000_XXXX 以 TS0004 身份接入 Zigbee2MQTT）
+const uint8 zclDIYRuZRT_ManufacturerName[] = { 12, '_','T','Z','3','0','0','0','_','X','X','X','X' };
+// модель设备（TS0004 = 4路开关）
+const uint8 zclDIYRuZRT_ModelId[] = { 6, 'T','S','0','0','0','4' };
+// дата版本
+const uint8 zclDIYRuZRT_DateCode[] = { 8, '2','0','2','6','0','7','1','7' };
 // вид питания POWER_SOURCE_MAINS_1_PHASE - питание от сети с одной фазой
 const uint8 zclDIYRuZRT_PowerSource = POWER_SOURCE_MAINS_1_PHASE;
 // расположение устройства
@@ -59,16 +58,14 @@ uint8 zclDIYRuZRT_DeviceEnable = DEVICE_ENABLED;
 // время идентификации
 uint16 zclDIYRuZRT_IdentifyTime;
 
-// Состояние реле
+// Состояние реле（NV 存储用，位操作表示 4 路状态）
 extern uint8 RELAY_STATE;
 
-// Данные о температуре
-#define MAX_MEASURED_VALUE  10000  // 100.00C
-#define MIN_MEASURED_VALUE  -10000  // -100.00C
-
-extern int16 zclDIYRuZRT_MeasuredValue;
-const int16 zclDIYRuZRT_MinMeasuredValue = MIN_MEASURED_VALUE; 
-const uint16 zclDIYRuZRT_MaxMeasuredValue = MAX_MEASURED_VALUE;
+// 4路开关的 OnOff 属性变量（每路独立）
+uint8 zclDIYRuZRT_OnOff_EP1 = 0;
+uint8 zclDIYRuZRT_OnOff_EP2 = 0;
+uint8 zclDIYRuZRT_OnOff_EP3 = 0;
+uint8 zclDIYRuZRT_OnOff_EP4 = 0;
 
 // Таблица реализуемых команд для DISCOVER запроса
 #if ZCL_DISCOVER
@@ -77,11 +74,6 @@ CONST zclCommandRec_t zclDIYRuZRT_Cmds[] =
   {
     ZCL_CLUSTER_ID_GEN_BASIC,
     COMMAND_BASIC_RESET_FACT_DEFAULT,
-    CMD_DIR_SERVER_RECEIVED
-  },
-  {
-    ZCL_CLUSTER_ID_GEN_ON_OFF,
-    COMMAND_OFF,
     CMD_DIR_SERVER_RECEIVED
   },
   {
@@ -105,8 +97,10 @@ CONST uint8 zclCmdsArraySize = ( sizeof(zclDIYRuZRT_Cmds) / sizeof(zclDIYRuZRT_C
 #endif // ZCL_DISCOVER
 
 
-// Определение атрибутов приложения
-CONST zclAttrRec_t zclDIYRuZRT_Attrs[] =
+// =====================================================================
+// EP1 属性列表：完整 genBasic + genIdentify + genOnOff
+// =====================================================================
+CONST zclAttrRec_t zclDIYRuZRT_Attrs_EP1[] =
 {
   // *** Атрибуты Basic кластера ***
   {
@@ -217,6 +211,15 @@ CONST zclAttrRec_t zclDIYRuZRT_Attrs[] =
       (void *)&zclDIYRuZRT_DeviceEnable
     }
   },
+  {
+    ZCL_CLUSTER_ID_GEN_BASIC,
+    { // версия Basic кластера
+      ATTRID_CLUSTER_REVISION,
+      ZCL_DATATYPE_UINT16,
+      ACCESS_CONTROL_READ,
+      (void *)&zclDIYRuZRT_clusterRevision_all
+    }
+  },
 
 #ifdef ZCL_IDENTIFY
   // *** Атрибуты Identify кластера ***
@@ -231,15 +234,6 @@ CONST zclAttrRec_t zclDIYRuZRT_Attrs[] =
   },
 #endif
   {
-    ZCL_CLUSTER_ID_GEN_BASIC,
-    { // версия Basic кластера
-      ATTRID_CLUSTER_REVISION,
-      ZCL_DATATYPE_UINT16,
-      ACCESS_CONTROL_READ,
-      (void *)&zclDIYRuZRT_clusterRevision_all
-    }
-  },
-  {
     ZCL_CLUSTER_ID_GEN_IDENTIFY,
     { // версия Identify кластера
       ATTRID_CLUSTER_REVISION,
@@ -248,14 +242,15 @@ CONST zclAttrRec_t zclDIYRuZRT_Attrs[] =
       (void *)&zclDIYRuZRT_clusterRevision_all
     }
   },
-  // *** Атрибуты On/Off кластера ***
+
+  // *** Атрибуты On/Off кластера (EP1) ***
   {
     ZCL_CLUSTER_ID_GEN_ON_OFF,
-    { // состояние
+    { // состояние（EP1）
       ATTRID_ON_OFF,
       ZCL_DATATYPE_BOOLEAN,
       ACCESS_CONTROL_READ,
-      (void *)&RELAY_STATE
+      (void *)&zclDIYRuZRT_OnOff_EP1
     }
   },
   {
@@ -267,85 +262,281 @@ CONST zclAttrRec_t zclDIYRuZRT_Attrs[] =
       (void *)&zclDIYRuZRT_clusterRevision_all
     }
   },
-  // *** Атрибуты Temperature Measurement кластера ***
+};
+
+CONST uint8 zclDIYRuZRT_NumAttributes_EP1 = (sizeof(zclDIYRuZRT_Attrs_EP1) / sizeof(zclDIYRuZRT_Attrs_EP1[0]));
+
+// =====================================================================
+// EP2 属性列表：最小 genBasic + genIdentify + genOnOff
+// =====================================================================
+CONST zclAttrRec_t zclDIYRuZRT_Attrs_EP2[] =
+{
+  // *** Атрибуты Basic кластера（最小集） ***
   {
-    ZCL_CLUSTER_ID_MS_TEMPERATURE_MEASUREMENT,
-    { // Значение температуры
-      ATTRID_MS_TEMPERATURE_MEASURED_VALUE,
-      ZCL_DATATYPE_INT16,
-      ACCESS_CONTROL_READ | ACCESS_REPORTABLE,
-      (void *)&zclDIYRuZRT_MeasuredValue
-    }
-  },
-  {
-    ZCL_CLUSTER_ID_MS_TEMPERATURE_MEASUREMENT,
-    { // минимальное значение температуры
-      ATTRID_MS_TEMPERATURE_MIN_MEASURED_VALUE,
-      ZCL_DATATYPE_INT16,
-      ACCESS_CONTROL_READ,
-      (void *)&zclDIYRuZRT_MinMeasuredValue
-    }
-  },
-  {
-    ZCL_CLUSTER_ID_MS_TEMPERATURE_MEASUREMENT,
-    { // максимальное значение температуры
-      ATTRID_MS_TEMPERATURE_MAX_MEASURED_VALUE,
-      ZCL_DATATYPE_INT16,
-      ACCESS_CONTROL_READ,
-      (void *)&zclDIYRuZRT_MaxMeasuredValue
-    }
-  },
-  {
-    ZCL_CLUSTER_ID_MS_TEMPERATURE_MEASUREMENT,
-    {  // версия кластера
+    ZCL_CLUSTER_ID_GEN_BASIC,
+    { // версия Basic кластера
       ATTRID_CLUSTER_REVISION,
       ZCL_DATATYPE_UINT16,
       ACCESS_CONTROL_READ,
       (void *)&zclDIYRuZRT_clusterRevision_all
     }
   },
+
+#ifdef ZCL_IDENTIFY
+  // *** Атрибуты Identify кластера ***
+  {
+    ZCL_CLUSTER_ID_GEN_IDENTIFY,
+    { // время идентификации
+      ATTRID_IDENTIFY_TIME,
+      ZCL_DATATYPE_UINT16,
+      (ACCESS_CONTROL_READ | ACCESS_CONTROL_WRITE),
+      (void *)&zclDIYRuZRT_IdentifyTime
+    }
+  },
+#endif
+  {
+    ZCL_CLUSTER_ID_GEN_IDENTIFY,
+    { // версия Identify кластера
+      ATTRID_CLUSTER_REVISION,
+      ZCL_DATATYPE_UINT16,
+      ACCESS_CONTROL_READ,
+      (void *)&zclDIYRuZRT_clusterRevision_all
+    }
+  },
+
+  // *** Атрибуты On/Off кластера (EP2) ***
+  {
+    ZCL_CLUSTER_ID_GEN_ON_OFF,
+    { // состояние（EP2）
+      ATTRID_ON_OFF,
+      ZCL_DATATYPE_BOOLEAN,
+      ACCESS_CONTROL_READ,
+      (void *)&zclDIYRuZRT_OnOff_EP2
+    }
+  },
+  {
+    ZCL_CLUSTER_ID_GEN_ON_OFF,
+    {  // версия On/Off кластера
+      ATTRID_CLUSTER_REVISION,
+      ZCL_DATATYPE_UINT16,
+      ACCESS_CONTROL_READ | ACCESS_CLIENT,
+      (void *)&zclDIYRuZRT_clusterRevision_all
+    }
+  },
 };
 
-uint8 CONST zclDIYRuZRT_NumAttributes = ( sizeof(zclDIYRuZRT_Attrs) / sizeof(zclDIYRuZRT_Attrs[0]) );
+CONST uint8 zclDIYRuZRT_NumAttributes_EP2 = (sizeof(zclDIYRuZRT_Attrs_EP2) / sizeof(zclDIYRuZRT_Attrs_EP2[0]));
 
-// Список входящих кластеров приложения
-const cId_t zclDIYRuZRT_InClusterList[] =
+// =====================================================================
+// EP3 属性列表：最小 genBasic + genIdentify + genOnOff
+// =====================================================================
+CONST zclAttrRec_t zclDIYRuZRT_Attrs_EP3[] =
+{
+  // *** Атрибуты Basic кластера（最小集） ***
+  {
+    ZCL_CLUSTER_ID_GEN_BASIC,
+    { // версия Basic кластера
+      ATTRID_CLUSTER_REVISION,
+      ZCL_DATATYPE_UINT16,
+      ACCESS_CONTROL_READ,
+      (void *)&zclDIYRuZRT_clusterRevision_all
+    }
+  },
+
+#ifdef ZCL_IDENTIFY
+  // *** Атрибуты Identify кластера ***
+  {
+    ZCL_CLUSTER_ID_GEN_IDENTIFY,
+    { // время идентификации
+      ATTRID_IDENTIFY_TIME,
+      ZCL_DATATYPE_UINT16,
+      (ACCESS_CONTROL_READ | ACCESS_CONTROL_WRITE),
+      (void *)&zclDIYRuZRT_IdentifyTime
+    }
+  },
+#endif
+  {
+    ZCL_CLUSTER_ID_GEN_IDENTIFY,
+    { // версия Identify кластера
+      ATTRID_CLUSTER_REVISION,
+      ZCL_DATATYPE_UINT16,
+      ACCESS_CONTROL_READ,
+      (void *)&zclDIYRuZRT_clusterRevision_all
+    }
+  },
+
+  // *** Атрибуты On/Off кластера (EP3) ***
+  {
+    ZCL_CLUSTER_ID_GEN_ON_OFF,
+    { // состояние（EP3）
+      ATTRID_ON_OFF,
+      ZCL_DATATYPE_BOOLEAN,
+      ACCESS_CONTROL_READ,
+      (void *)&zclDIYRuZRT_OnOff_EP3
+    }
+  },
+  {
+    ZCL_CLUSTER_ID_GEN_ON_OFF,
+    {  // версия On/Off кластера
+      ATTRID_CLUSTER_REVISION,
+      ZCL_DATATYPE_UINT16,
+      ACCESS_CONTROL_READ | ACCESS_CLIENT,
+      (void *)&zclDIYRuZRT_clusterRevision_all
+    }
+  },
+};
+
+CONST uint8 zclDIYRuZRT_NumAttributes_EP3 = (sizeof(zclDIYRuZRT_Attrs_EP3) / sizeof(zclDIYRuZRT_Attrs_EP3[0]));
+
+// =====================================================================
+// EP4 属性列表：最小 genBasic + genIdentify + genOnOff
+// =====================================================================
+CONST zclAttrRec_t zclDIYRuZRT_Attrs_EP4[] =
+{
+  // *** Атрибуты Basic кластера（最小集） ***
+  {
+    ZCL_CLUSTER_ID_GEN_BASIC,
+    { // версия Basic кластера
+      ATTRID_CLUSTER_REVISION,
+      ZCL_DATATYPE_UINT16,
+      ACCESS_CONTROL_READ,
+      (void *)&zclDIYRuZRT_clusterRevision_all
+    }
+  },
+
+#ifdef ZCL_IDENTIFY
+  // *** Атрибуты Identify кластера ***
+  {
+    ZCL_CLUSTER_ID_GEN_IDENTIFY,
+    { // время идентификации
+      ATTRID_IDENTIFY_TIME,
+      ZCL_DATATYPE_UINT16,
+      (ACCESS_CONTROL_READ | ACCESS_CONTROL_WRITE),
+      (void *)&zclDIYRuZRT_IdentifyTime
+    }
+  },
+#endif
+  {
+    ZCL_CLUSTER_ID_GEN_IDENTIFY,
+    { // версия Identify кластера
+      ATTRID_CLUSTER_REVISION,
+      ZCL_DATATYPE_UINT16,
+      ACCESS_CONTROL_READ,
+      (void *)&zclDIYRuZRT_clusterRevision_all
+    }
+  },
+
+  // *** Атрибуты On/Off кластера (EP4) ***
+  {
+    ZCL_CLUSTER_ID_GEN_ON_OFF,
+    { // состояние（EP4）
+      ATTRID_ON_OFF,
+      ZCL_DATATYPE_BOOLEAN,
+      ACCESS_CONTROL_READ,
+      (void *)&zclDIYRuZRT_OnOff_EP4
+    }
+  },
+  {
+    ZCL_CLUSTER_ID_GEN_ON_OFF,
+    {  // версия On/Off кластера
+      ATTRID_CLUSTER_REVISION,
+      ZCL_DATATYPE_UINT16,
+      ACCESS_CONTROL_READ | ACCESS_CLIENT,
+      (void *)&zclDIYRuZRT_clusterRevision_all
+    }
+  },
+};
+
+CONST uint8 zclDIYRuZRT_NumAttributes_EP4 = (sizeof(zclDIYRuZRT_Attrs_EP4) / sizeof(zclDIYRuZRT_Attrs_EP4[0]));
+
+// =====================================================================
+// 输入集群列表
+// =====================================================================
+
+// EP1 输入集群列表：genBasic, genIdentify, genGroups, genOnOff
+const cId_t zclDIYRuZRT_InClusterList_EP1[] =
 {
   ZCL_CLUSTER_ID_GEN_BASIC,
   ZCL_CLUSTER_ID_GEN_IDENTIFY,
   ZCL_CLUSTER_ID_GEN_GROUPS,
   ZCL_CLUSTER_ID_GEN_ON_OFF,
-  ZCL_CLUSTER_ID_MS_TEMPERATURE_MEASUREMENT,
-  
-  // TODO: Add application specific Input Clusters Here. 
-  //       See zcl.h for Cluster ID definitions
-  
 };
-#define ZCLDIYRuZRT_MAX_INCLUSTERS   (sizeof(zclDIYRuZRT_InClusterList) / sizeof(zclDIYRuZRT_InClusterList[0]))
+#define ZCLDIYRuZRT_MAX_INCLUSTERS_EP1   (sizeof(zclDIYRuZRT_InClusterList_EP1) / sizeof(zclDIYRuZRT_InClusterList_EP1[0]))
 
-// Список исходящих кластеров приложения
+// EP2~EP4 共用的最小输入集群列表：genBasic, genIdentify, genOnOff（无 genGroups）
+const cId_t zclDIYRuZRT_InClusterList_Minimal[] =
+{
+  ZCL_CLUSTER_ID_GEN_BASIC,
+  ZCL_CLUSTER_ID_GEN_IDENTIFY,
+  ZCL_CLUSTER_ID_GEN_ON_OFF,
+};
+#define ZCLDIYRuZRT_MAX_INCLUSTERS_MINIMAL   (sizeof(zclDIYRuZRT_InClusterList_Minimal) / sizeof(zclDIYRuZRT_InClusterList_Minimal[0]))
+
+// Список исходящих кластеров приложения（4 个 EP 共用）
 const cId_t zclDIYRuZRT_OutClusterList[] =
 {
   ZCL_CLUSTER_ID_GEN_BASIC,
-  
-  // TODO: Add application specific Output Clusters Here. 
-  //       See zcl.h for Cluster ID definitions
 };
 #define ZCLDIYRuZRT_MAX_OUTCLUSTERS  (sizeof(zclDIYRuZRT_OutClusterList) / sizeof(zclDIYRuZRT_OutClusterList[0]))
 
-// Структура описания эндпоинта
-SimpleDescriptionFormat_t zclDIYRuZRT_SimpleDesc =
+// =====================================================================
+// 4 个 Endpoint 的 SimpleDescriptionFormat_t
+// =====================================================================
+
+// EP1 描述：完整 Basic + Groups + OnOff
+SimpleDescriptionFormat_t zclDIYRuZRT_SimpleDesc_EP1 =
 {
-  DIYRuZRT_ENDPOINT,                  //  int Endpoint;
-  ZCL_HA_PROFILE_ID,                  //  uint16 AppProfId;
-  // TODO: Replace ZCL_HA_DEVICEID_ON_OFF_LIGHT with application specific device ID
-  ZCL_HA_DEVICEID_ON_OFF_LIGHT,       //  uint16 AppDeviceId; 
-  DIYRuZRT_DEVICE_VERSION,            //  int   AppDevVer:4;
-  DIYRuZRT_FLAGS,                     //  int   AppFlags:4;
-  ZCLDIYRuZRT_MAX_INCLUSTERS,         //  byte  AppNumInClusters;
-  (cId_t *)zclDIYRuZRT_InClusterList, //  byte *pAppInClusterList;
-  ZCLDIYRuZRT_MAX_OUTCLUSTERS,        //  byte  AppNumInClusters;
-  (cId_t *)zclDIYRuZRT_OutClusterList //  byte *pAppInClusterList;
+  DIYRuZRT_ENDPOINT_1,                       //  int Endpoint;
+  ZCL_HA_PROFILE_ID,                         //  uint16 AppProfId;
+  ZCL_HA_DEVICEID_ON_OFF_SWITCH,             //  uint16 AppDeviceId;
+  DIYRuZRT_DEVICE_VERSION,                   //  int   AppDevVer:4;
+  DIYRuZRT_FLAGS,                            //  int   AppFlags:4;
+  ZCLDIYRuZRT_MAX_INCLUSTERS_EP1,            //  byte  AppNumInClusters;
+  (cId_t *)zclDIYRuZRT_InClusterList_EP1,    //  byte *pAppInClusterList;
+  ZCLDIYRuZRT_MAX_OUTCLUSTERS,               //  byte  AppNumOutClusters;
+  (cId_t *)zclDIYRuZRT_OutClusterList        //  byte *pAppOutClusterList;
+};
+
+// EP2 描述：最小 Basic + OnOff
+SimpleDescriptionFormat_t zclDIYRuZRT_SimpleDesc_EP2 =
+{
+  DIYRuZRT_ENDPOINT_2,                          //  int Endpoint;
+  ZCL_HA_PROFILE_ID,                            //  uint16 AppProfId;
+  ZCL_HA_DEVICEID_ON_OFF_SWITCH,                //  uint16 AppDeviceId;
+  DIYRuZRT_DEVICE_VERSION,                      //  int   AppDevVer:4;
+  DIYRuZRT_FLAGS,                               //  int   AppFlags:4;
+  ZCLDIYRuZRT_MAX_INCLUSTERS_MINIMAL,           //  byte  AppNumInClusters;
+  (cId_t *)zclDIYRuZRT_InClusterList_Minimal,   //  byte *pAppInClusterList;
+  ZCLDIYRuZRT_MAX_OUTCLUSTERS,                  //  byte  AppNumOutClusters;
+  (cId_t *)zclDIYRuZRT_OutClusterList           //  byte *pAppOutClusterList;
+};
+
+// EP3 描述：最小 Basic + OnOff
+SimpleDescriptionFormat_t zclDIYRuZRT_SimpleDesc_EP3 =
+{
+  DIYRuZRT_ENDPOINT_3,                          //  int Endpoint;
+  ZCL_HA_PROFILE_ID,                            //  uint16 AppProfId;
+  ZCL_HA_DEVICEID_ON_OFF_SWITCH,                //  uint16 AppDeviceId;
+  DIYRuZRT_DEVICE_VERSION,                      //  int   AppDevVer:4;
+  DIYRuZRT_FLAGS,                               //  int   AppFlags:4;
+  ZCLDIYRuZRT_MAX_INCLUSTERS_MINIMAL,           //  byte  AppNumInClusters;
+  (cId_t *)zclDIYRuZRT_InClusterList_Minimal,   //  byte *pAppInClusterList;
+  ZCLDIYRuZRT_MAX_OUTCLUSTERS,                  //  byte  AppNumOutClusters;
+  (cId_t *)zclDIYRuZRT_OutClusterList           //  byte *pAppOutClusterList;
+};
+
+// EP4 描述：最小 Basic + OnOff
+SimpleDescriptionFormat_t zclDIYRuZRT_SimpleDesc_EP4 =
+{
+  DIYRuZRT_ENDPOINT_4,                          //  int Endpoint;
+  ZCL_HA_PROFILE_ID,                            //  uint16 AppProfId;
+  ZCL_HA_DEVICEID_ON_OFF_SWITCH,                //  uint16 AppDeviceId;
+  DIYRuZRT_DEVICE_VERSION,                      //  int   AppDevVer:4;
+  DIYRuZRT_FLAGS,                               //  int   AppFlags:4;
+  ZCLDIYRuZRT_MAX_INCLUSTERS_MINIMAL,           //  byte  AppNumInClusters;
+  (cId_t *)zclDIYRuZRT_InClusterList_Minimal,   //  byte *pAppInClusterList;
+  ZCLDIYRuZRT_MAX_OUTCLUSTERS,                  //  byte  AppNumOutClusters;
+  (cId_t *)zclDIYRuZRT_OutClusterList           //  byte *pAppOutClusterList;
 };
 
 // Сброс атрибутов в значения по-умолчанию  
