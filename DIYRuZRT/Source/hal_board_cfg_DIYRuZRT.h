@@ -39,7 +39,7 @@
 // Конфигурация светодиодов
 
 // Количество светодиодов
-#define HAL_NUM_LEDS            3
+#define HAL_NUM_LEDS            4
 
 #define HAL_LED_BLINK_DELAY()   st( { volatile uint32 i; for (i=0; i<0x5800; i++) { }; } )
 
@@ -56,79 +56,128 @@
   #define LED2_DDR          P1DIR
   #define LED2_POLARITY     ACTIVE_LOW
 #else
-  /* 1 - P1_0 Зеленый */
+  /* LED1 - P0_0（继电器 OFF 时 LED 亮，ACTIVE_HIGH） */
   #define LED1_BV           BV(0)
-  #define LED1_SBIT         P1_0
-  #define LED1_DDR          P1DIR
-  #define LED1_POLARITY     ACTIVE_LOW
+  #define LED1_SBIT         P0_0
+  #define LED1_DDR          P0DIR
+  #define LED1_POLARITY     ACTIVE_HIGH
 
-  /* 2 - P1_1 Красный */
+  /* LED2 - P0_1 */
   #define LED2_BV           BV(1)
-  #define LED2_SBIT         P1_1
-  #define LED2_DDR          P1DIR
-  #define LED2_POLARITY     ACTIVE_LOW
+  #define LED2_SBIT         P0_1
+  #define LED2_DDR          P0DIR
+  #define LED2_POLARITY     ACTIVE_HIGH
+
+  /* LED3 - P0_2 */
+  #define LED3_BV           BV(2)
+  #define LED3_SBIT         P0_2
+  #define LED3_DDR          P0DIR
+  #define LED3_POLARITY     ACTIVE_HIGH
+
+  /* LED4 - P0_3 */
+  #define LED4_BV           BV(3)
+  #define LED4_SBIT         P0_3
+  #define LED4_DDR          P0DIR
+  #define LED4_POLARITY     ACTIVE_HIGH
 #endif
 
-/* 3 - P1_4 Зеленый */
-#define LED3_BV           BV(4)
-#define LED3_SBIT         P1_4
-#define LED3_DDR          P1DIR
-#define LED3_POLARITY     ACTIVE_LOW
+// 继电器配置（低电平触发吸合，高电平断开）
+/* RELAY1 - P1_0 */
+#define RELAY1_BV          BV(0)
+#define RELAY1_SBIT        P1_0
+#define RELAY1_DDR         P1DIR
 
-#define LED4_BV
-#define LED4_SBIT
-#define LED4_DDR
-#define LED4_POLARITY  
-#define LED4_SET_DIR()
+/* RELAY2 - P1_2 */
+#define RELAY2_BV          BV(2)
+#define RELAY2_SBIT        P1_2
+#define RELAY2_DDR         P1DIR
 
-// Конфигурация кнопок
+/* RELAY3 - P1_6 */
+#define RELAY3_BV          BV(6)
+#define RELAY3_SBIT        P1_6
+#define RELAY3_DDR         P1DIR
+
+/* RELAY4 - P2_0 */
+#define RELAY4_BV          BV(0)
+#define RELAY4_SBIT        P2_0
+#define RELAY4_DDR         P2DIR
+
+// 继电器控制宏：ON=输出0（低电平触发吸合），OFF=输出1（高电平断开）
+#define RELAY_ON(ch)       st( RELAY##ch##_SBIT = 0; )
+#define RELAY_OFF(ch)      st( RELAY##ch##_SBIT = 1; )
+
+// Конфигурация кнопок и触摸输入
 
 #define ACTIVE_LOW        !
 #define ACTIVE_HIGH       !!    /* double negation forces result to be '1' */
 
-#ifdef HAL_SONOFF
-  /* S1 - P1_3 */
-  #define PUSH1_BV          BV(3)
-  #define PUSH1_SBIT        P1_3
-  #define PUSH1_POLARITY    ACTIVE_LOW
-  #define PUSH1_PORT        P1
-  #define PUSH1_SEL         P1SEL
-  #define PUSH1_DIR         P1DIR
-  #define PUSH1_IEN         IEN1  /* CPU interrupt mask register */
-  #define PUSH1_IENBIT      BV(5) /* Mask bit for all of Port_0 */
-  #define PUSH1_ICTL        P1IEN /* Port Interrupt Control register */
-  #define PUSH1_ICTLBIT     BV(3) /* P0IEN - P0.1 enable/disable bit */
-#else
-  /* S1 - P0_1 */
-  #define PUSH1_BV          BV(1)
-  #define PUSH1_SBIT        P0_1
-  #define PUSH1_POLARITY    ACTIVE_LOW
-  #define PUSH1_PORT        P0
-  #define PUSH1_SEL         P0SEL
-  #define PUSH1_DIR         P0DIR
-  #define PUSH1_IEN         IEN1  /* CPU interrupt mask register */
-  #define PUSH1_IENBIT      BV(5) /* Mask bit for all of Port_0 */
-  #define PUSH1_ICTL        P0IEN /* Port Interrupt Control register */
-  #define PUSH1_ICTLBIT     BV(1) /* P0IEN - P0.1 enable/disable bit */
-#endif
+// 触摸输入引脚定义（低电平有效）
+/* TOUCH1 - P0_4 */
+#define TOUCH1_BV         BV(4)
+#define TOUCH1_SBIT       P0_4
+#define TOUCH1_DIR        P0DIR
 
-/* S2 - P2_0 */
-#define PUSH2_BV          BV(0)
-#define PUSH2_SBIT        P2_0
-#define PUSH2_POLARITY    ACTIVE_HIGH
-#define PUSH2_PORT        P2
-#define PUSH2_SEL         P2SEL
-#define PUSH2_DIR         P2DIR
-#define PUSH2_IEN         IEN2  /* CPU interrupt mask register */
-#define PUSH2_IENBIT      BV(1) /* Mask bit for all of Port_0 */
-#define PUSH2_ICTL        P2IEN /* Port Interrupt Control register */
-#define PUSH2_ICTLBIT     BV(0) /* P0IEN - P2.0 enable/disable bit */
+/* TOUCH2 - P0_5 */
+#define TOUCH2_BV         BV(5)
+#define TOUCH2_SBIT       P0_5
+#define TOUCH2_DIR        P0DIR
 
+/* TOUCH3 - P0_6 */
+#define TOUCH3_BV         BV(6)
+#define TOUCH3_SBIT       P0_6
+#define TOUCH3_DIR        P0DIR
 
-// Конфигурация сенсора температуры
-#define TSENS_SBIT P2_1
-#define TSENS_BV BV(1)
-#define TSENS_DIR P2DIR 
+/* TOUCH4 - P0_7 */
+#define TOUCH4_BV         BV(7)
+#define TOUCH4_SBIT       P0_7
+#define TOUCH4_DIR        P0DIR
+
+// 触摸按键检测宏（低电平有效）
+#define TOUCH_PRESSED(ch) (!TOUCH##ch##_SBIT)
+
+/* 配网按键 S1 - P1_3（完整中断配置） */
+#define PUSH1_BV          BV(3)
+#define PUSH1_SBIT        P1_3
+#define PUSH1_POLARITY    ACTIVE_LOW
+#define PUSH1_PORT        P1
+#define PUSH1_SEL         P1SEL
+#define PUSH1_DIR         P1DIR
+#define PUSH1_IEN         IEN1  /* CPU interrupt mask register */
+#define PUSH1_IENBIT      BV(5) /* Mask bit for all of Port_1 */
+#define PUSH1_ICTL        P1IEN /* Port Interrupt Control register */
+#define PUSH1_ICTLBIT     BV(3) /* P1IEN - P1.3 enable/disable bit */
+
+/* 触摸输入 1 - P0_4（轮询检测，无需中断配置） */
+#define PUSH2_BV          BV(4)
+#define PUSH2_SBIT        P0_4
+#define PUSH2_POLARITY    ACTIVE_LOW
+#define PUSH2_PORT        P0
+#define PUSH2_SEL         P0SEL
+#define PUSH2_DIR         P0DIR
+
+/* 触摸输入 2 - P0_5（轮询检测，无需中断配置） */
+#define PUSH3_BV          BV(5)
+#define PUSH3_SBIT        P0_5
+#define PUSH3_POLARITY    ACTIVE_LOW
+#define PUSH3_PORT        P0
+#define PUSH3_SEL         P0SEL
+#define PUSH3_DIR         P0DIR
+
+/* 触摸输入 3 - P0_6（轮询检测，无需中断配置） */
+#define PUSH4_BV          BV(6)
+#define PUSH4_SBIT        P0_6
+#define PUSH4_POLARITY    ACTIVE_LOW
+#define PUSH4_PORT        P0
+#define PUSH4_SEL         P0SEL
+#define PUSH4_DIR         P0DIR
+
+/* 触摸输入 4 - P0_7（轮询检测，无需中断配置） */
+#define PUSH5_BV          BV(7)
+#define PUSH5_SBIT        P0_7
+#define PUSH5_POLARITY    ACTIVE_LOW
+#define PUSH5_PORT        P0
+#define PUSH5_SEL         P0SEL
+#define PUSH5_DIR         P0DIR
 
 
 // OSAL NV - постоянная внутренняя flash-память
@@ -222,17 +271,27 @@ extern void DIYRuZRT_HalKeyInit( void );
   /* Turn on cache prefetch mode */                              \
   PREFETCH_ENABLE();                                             \
                                                                  \
-  HAL_TURN_OFF_LED1();                                           \
+  /* 初始化 LED1~4：默认输出 HIGH（LED 亮，继电器 OFF 时 LED 亮） */ \
+  HAL_TURN_ON_LED1();                                            \
   LED1_DDR |= LED1_BV;                                           \
-  HAL_TURN_OFF_LED2();                                           \
+  HAL_TURN_ON_LED2();                                            \
   LED2_DDR |= LED2_BV;                                           \
-  HAL_TURN_OFF_LED3();                                           \
+  HAL_TURN_ON_LED3();                                            \
   LED3_DDR |= LED3_BV;                                           \
-  HAL_TURN_OFF_LED4();                                           \
-  LED4_SET_DIR();                                                \
+  HAL_TURN_ON_LED4();                                            \
+  LED4_DDR |= LED4_BV;                                           \
                                                                  \
-  /* configure tristates */                                      \
-  P0INP |= PUSH2_BV;                                             \
+  /* 初始化 RELAY1~4：默认输出 HIGH（继电器断开） */              \
+  RELAY_OFF(1);                                                  \
+  RELAY1_DDR |= RELAY1_BV;                                       \
+  RELAY_OFF(2);                                                  \
+  RELAY2_DDR |= RELAY2_BV;                                       \
+  RELAY_OFF(3);                                                  \
+  RELAY3_DDR |= RELAY3_BV;                                       \
+  RELAY_OFF(4);                                                  \
+  RELAY4_DDR |= RELAY4_BV;                                       \
+                                                                 \
+  /* TOUCH1~4 的 DIR 在 DIYRuZRT_HalKeyInit() 中设置 */          \
   DIYRuZRT_HalKeyInit();                                         \
 }
 
@@ -311,32 +370,32 @@ extern void DIYRuZRT_HalKeyInit( void );
 
 // Макросы для проверки кнопок
 #define HAL_PUSH_BUTTON1()        (PUSH1_POLARITY (PUSH1_SBIT))
-#define HAL_PUSH_BUTTON2()        (PUSH2_POLARITY (PUSH2_SBIT))
-#define HAL_PUSH_BUTTON3()        (0)
-#define HAL_PUSH_BUTTON4()        (0)
-#define HAL_PUSH_BUTTON5()        (0)
+#define HAL_PUSH_BUTTON2()        (TOUCH_PRESSED(1))
+#define HAL_PUSH_BUTTON3()        (TOUCH_PRESSED(2))
+#define HAL_PUSH_BUTTON4()        (TOUCH_PRESSED(3))
+#define HAL_PUSH_BUTTON5()        (TOUCH_PRESSED(4))
 #define HAL_PUSH_BUTTON6()        (0)
 
 // Макросы для управления светодиодами
 #define HAL_TURN_OFF_LED1()       st( LED1_SBIT = LED1_POLARITY (0); )
 #define HAL_TURN_OFF_LED2()       st( LED2_SBIT = LED2_POLARITY (0); )
 #define HAL_TURN_OFF_LED3()       st( LED3_SBIT = LED3_POLARITY (0); )
-#define HAL_TURN_OFF_LED4()       HAL_TURN_OFF_LED1()
+#define HAL_TURN_OFF_LED4()       st( LED4_SBIT = LED4_POLARITY (0); )
 
 #define HAL_TURN_ON_LED1()        st( LED1_SBIT = LED1_POLARITY (1); )
 #define HAL_TURN_ON_LED2()        st( LED2_SBIT = LED2_POLARITY (1); )
 #define HAL_TURN_ON_LED3()        st( LED3_SBIT = LED3_POLARITY (1); )
-#define HAL_TURN_ON_LED4()        HAL_TURN_ON_LED1()
+#define HAL_TURN_ON_LED4()        st( LED4_SBIT = LED4_POLARITY (1); )
 
 #define HAL_TOGGLE_LED1()         st( if (LED1_SBIT) { LED1_SBIT = 0; } else { LED1_SBIT = 1;} )
 #define HAL_TOGGLE_LED2()         st( if (LED2_SBIT) { LED2_SBIT = 0; } else { LED2_SBIT = 1;} )
 #define HAL_TOGGLE_LED3()         st( if (LED3_SBIT) { LED3_SBIT = 0; } else { LED3_SBIT = 1;} )
-#define HAL_TOGGLE_LED4()         HAL_TOGGLE_LED1()
+#define HAL_TOGGLE_LED4()         st( if (LED4_SBIT) { LED4_SBIT = 0; } else { LED4_SBIT = 1;} )
 
 #define HAL_STATE_LED1()          (LED1_POLARITY (LED1_SBIT))
 #define HAL_STATE_LED2()          (LED2_POLARITY (LED2_SBIT))
 #define HAL_STATE_LED3()          (LED3_POLARITY (LED3_SBIT))
-#define HAL_STATE_LED4()          HAL_STATE_LED1()
+#define HAL_STATE_LED4()          (LED4_POLARITY (LED4_SBIT))
       
 
 /* ----------- XNV ---------- */
