@@ -22,6 +22,8 @@ extern "C"
 #define DIYRuZRT_EVT_LONG                 0x0002
 #define DIYRuZRT_END_DEVICE_REJOIN_EVT    0x0004
 #define DIYRuZRT_REPORTING_EVT            0x0008
+// 延迟保存 NV
+#define DIYRuZRT_EVT_NV_SAVE              0x0010
   
   
 // NVM IDs
@@ -73,7 +75,11 @@ extern void DIYRuZRT_HalKeyInit( void );
 extern void DIYRuZRT_HalKeyPoll ( void );
 
 // Функции команд управления
-static void zclDIYRuZRT_OnOffCB(uint8);
+// 4 路 OnOff 命令回调
+static void zclDIYRuZRT_OnOffCB_EP1(uint8);
+static void zclDIYRuZRT_OnOffCB_EP2(uint8);
+static void zclDIYRuZRT_OnOffCB_EP3(uint8);
+static void zclDIYRuZRT_OnOffCB_EP4(uint8);
 
 #ifdef __cplusplus
 }

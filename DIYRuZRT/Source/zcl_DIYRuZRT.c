@@ -10,7 +10,6 @@
 #include "zcl.h"
 #include "zcl_general.h"
 #include "zcl_ha.h"
-#include "zcl_ms.h"
 #include "zcl_diagnostic.h"
 #include "zcl_DIYRuZRT.h"
 
@@ -26,8 +25,6 @@
 #include "hal_key.h"
 #include "hal_drivers.h"
 
-#include "ds18b20.h"
-
 // Идентификатор задачи нашего приложения
 byte zclDIYRuZRT_TaskID;
 
@@ -36,12 +33,11 @@ devStates_t zclDIYRuZRT_NwkState = DEV_INIT;
 
 // Состояние кнопок
 static uint8 halKeySavedKeys;
+// 触摸按键上次状态（Task 5 使用）
+static uint8 halKeySavedTouch;
 
-// Состояние реле
+// 4路继电器状态（bit0~3 对应 EP1~4，1=ON, 0=OFF）
 uint8 RELAY_STATE = 0;
-
-// Данные о температуре
-int16 zclDIYRuZRT_MeasuredValue;
 
 // Структура для отправки отчета
 afAddrType_t zclDIYRuZRT_DstAddr;
@@ -70,24 +66,128 @@ static uint8 zclDIYRuZRT_ProcessInDiscAttrsExtRspCmd( zclIncomingMsg_t *pInMsg )
 #endif
 
 // Изменение состояние реле
-static void updateRelay( bool );
+static void updateRelay( uint8 ch, bool value );
 // Отображение состояния реле на пинах
-static void applyRelay( void );
+static void applyRelay( uint8 ch );
+static void applyRelayAll( void );
+// 同步 OnOff 属性变量
+static void syncOnOffAttr( uint8 ch );
+static void syncOnOffAttrAll( void );
+// 统一处理 OnOff 命令
+static void handleOnOff( uint8 ep, uint8 cmd );
 // Выход из сети
 void zclDIYRuZRT_LeaveNetwork( void );
 // Отправка отчета о состоянии реле
-void zclDIYRuZRT_ReportOnOff( void );
-// Отправка отчета о температуре
-void zclDIYRuZRT_ReportTemp( void );
+void zclDIYRuZRT_ReportOnOff( uint8 ep );
 
 /*********************************************************************
  * Таблица обработчиков основных ZCL команд
+ * 4 组回调结构体（分别对应 4 个 Endpoint，仅 OnOffCB 不同）
  */
-static zclGeneral_AppCallbacks_t zclDIYRuZRT_CmdCallbacks =
+static zclGeneral_AppCallbacks_t zclDIYRuZRT_CmdCallbacks_EP1 =
 {
   zclDIYRuZRT_BasicResetCB,               // Basic Cluster Reset command
   NULL,                                   // Identify Trigger Effect command
-  zclDIYRuZRT_OnOffCB,                    // On/Off cluster commands
+  zclDIYRuZRT_OnOffCB_EP1,                // On/Off cluster commands
+  NULL,                                   // On/Off cluster enhanced command Off with Effect
+  NULL,                                   // On/Off cluster enhanced command On with Recall Global Scene
+  NULL,                                   // On/Off cluster enhanced command On with Timed Off
+#ifdef ZCL_LEVEL_CTRL
+  NULL,                                   // Level Control Move to Level command
+  NULL,                                   // Level Control Move command
+  NULL,                                   // Level Control Step command
+  NULL,                                   // Level Control Stop command
+#endif
+#ifdef ZCL_GROUPS
+  NULL,                                   // Group Response commands
+#endif
+#ifdef ZCL_SCENES
+  NULL,                                  // Scene Store Request command
+  NULL,                                  // Scene Recall Request command
+  NULL,                                  // Scene Response command
+#endif
+#ifdef ZCL_ALARMS
+  NULL,                                  // Alarm (Response) commands
+#endif
+#ifdef SE_UK_EXT
+  NULL,                                  // Get Event Log command
+  NULL,                                  // Publish Event Log command
+#endif
+  NULL,                                  // RSSI Location command
+  NULL                                   // RSSI Location Response command
+};
+
+static zclGeneral_AppCallbacks_t zclDIYRuZRT_CmdCallbacks_EP2 =
+{
+  zclDIYRuZRT_BasicResetCB,               // Basic Cluster Reset command
+  NULL,                                   // Identify Trigger Effect command
+  zclDIYRuZRT_OnOffCB_EP2,                // On/Off cluster commands
+  NULL,                                   // On/Off cluster enhanced command Off with Effect
+  NULL,                                   // On/Off cluster enhanced command On with Recall Global Scene
+  NULL,                                   // On/Off cluster enhanced command On with Timed Off
+#ifdef ZCL_LEVEL_CTRL
+  NULL,                                   // Level Control Move to Level command
+  NULL,                                   // Level Control Move command
+  NULL,                                   // Level Control Step command
+  NULL,                                   // Level Control Stop command
+#endif
+#ifdef ZCL_GROUPS
+  NULL,                                   // Group Response commands
+#endif
+#ifdef ZCL_SCENES
+  NULL,                                  // Scene Store Request command
+  NULL,                                  // Scene Recall Request command
+  NULL,                                  // Scene Response command
+#endif
+#ifdef ZCL_ALARMS
+  NULL,                                  // Alarm (Response) commands
+#endif
+#ifdef SE_UK_EXT
+  NULL,                                  // Get Event Log command
+  NULL,                                  // Publish Event Log command
+#endif
+  NULL,                                  // RSSI Location command
+  NULL                                   // RSSI Location Response command
+};
+
+static zclGeneral_AppCallbacks_t zclDIYRuZRT_CmdCallbacks_EP3 =
+{
+  zclDIYRuZRT_BasicResetCB,               // Basic Cluster Reset command
+  NULL,                                   // Identify Trigger Effect command
+  zclDIYRuZRT_OnOffCB_EP3,                // On/Off cluster commands
+  NULL,                                   // On/Off cluster enhanced command Off with Effect
+  NULL,                                   // On/Off cluster enhanced command On with Recall Global Scene
+  NULL,                                   // On/Off cluster enhanced command On with Timed Off
+#ifdef ZCL_LEVEL_CTRL
+  NULL,                                   // Level Control Move to Level command
+  NULL,                                   // Level Control Move command
+  NULL,                                   // Level Control Step command
+  NULL,                                   // Level Control Stop command
+#endif
+#ifdef ZCL_GROUPS
+  NULL,                                   // Group Response commands
+#endif
+#ifdef ZCL_SCENES
+  NULL,                                  // Scene Store Request command
+  NULL,                                  // Scene Recall Request command
+  NULL,                                  // Scene Response command
+#endif
+#ifdef ZCL_ALARMS
+  NULL,                                  // Alarm (Response) commands
+#endif
+#ifdef SE_UK_EXT
+  NULL,                                  // Get Event Log command
+  NULL,                                  // Publish Event Log command
+#endif
+  NULL,                                  // RSSI Location command
+  NULL                                   // RSSI Location Response command
+};
+
+static zclGeneral_AppCallbacks_t zclDIYRuZRT_CmdCallbacks_EP4 =
+{
+  zclDIYRuZRT_BasicResetCB,               // Basic Cluster Reset command
+  NULL,                                   // Identify Trigger Effect command
+  zclDIYRuZRT_OnOffCB_EP4,                // On/Off cluster commands
   NULL,                                   // On/Off cluster enhanced command Off with Effect
   NULL,                                   // On/Off cluster enhanced command On with Recall Global Scene
   NULL,                                   // On/Off cluster enhanced command On with Timed Off
@@ -141,24 +241,34 @@ static zclGeneral_AppCallbacks_t zclDIYRuZRT_CmdCallbacks =
 void zclDIYRuZRT_Init( byte task_id )
 {
   zclDIYRuZRT_TaskID = task_id;
-  
-  // Регистрация описания профиля Home Automation Profile
-  bdb_RegisterSimpleDescriptor( &zclDIYRuZRT_SimpleDesc );
 
-  // Регистрация обработчиков ZCL команд
-  zclGeneral_RegisterCmdCallbacks( DIYRuZRT_ENDPOINT, &zclDIYRuZRT_CmdCallbacks );
-  
-  // TODO: Register other cluster command callbacks here
+  // 注册 4 个 Endpoint 的 SimpleDescriptor
+  bdb_RegisterSimpleDescriptor( &zclDIYRuZRT_SimpleDesc_EP1 );
+  bdb_RegisterSimpleDescriptor( &zclDIYRuZRT_SimpleDesc_EP2 );
+  bdb_RegisterSimpleDescriptor( &zclDIYRuZRT_SimpleDesc_EP3 );
+  bdb_RegisterSimpleDescriptor( &zclDIYRuZRT_SimpleDesc_EP4 );
 
-  // Регистрация атрибутов кластеров приложения
-  zcl_registerAttrList( DIYRuZRT_ENDPOINT, zclDIYRuZRT_NumAttributes, zclDIYRuZRT_Attrs );
+  // 注册 4 组命令回调
+  zclGeneral_RegisterCmdCallbacks( DIYRuZRT_ENDPOINT_1, &zclDIYRuZRT_CmdCallbacks_EP1 );
+  zclGeneral_RegisterCmdCallbacks( DIYRuZRT_ENDPOINT_2, &zclDIYRuZRT_CmdCallbacks_EP2 );
+  zclGeneral_RegisterCmdCallbacks( DIYRuZRT_ENDPOINT_3, &zclDIYRuZRT_CmdCallbacks_EP3 );
+  zclGeneral_RegisterCmdCallbacks( DIYRuZRT_ENDPOINT_4, &zclDIYRuZRT_CmdCallbacks_EP4 );
+
+  // 注册 4 组属性列表
+  zcl_registerAttrList( DIYRuZRT_ENDPOINT_1, zclDIYRuZRT_NumAttributes_EP1, zclDIYRuZRT_Attrs_EP1 );
+  zcl_registerAttrList( DIYRuZRT_ENDPOINT_2, zclDIYRuZRT_NumAttributes_EP2, zclDIYRuZRT_Attrs_EP2 );
+  zcl_registerAttrList( DIYRuZRT_ENDPOINT_3, zclDIYRuZRT_NumAttributes_EP3, zclDIYRuZRT_Attrs_EP3 );
+  zcl_registerAttrList( DIYRuZRT_ENDPOINT_4, zclDIYRuZRT_NumAttributes_EP4, zclDIYRuZRT_Attrs_EP4 );
 
   // Подписка задачи на получение сообщений о командах/ответах
   zcl_registerForMsg( zclDIYRuZRT_TaskID );
 
 #ifdef ZCL_DISCOVER
   // Регистрация списка команд, реализуемых приложением
-  zcl_registerCmdList( DIYRuZRT_ENDPOINT, zclCmdsArraySize, zclDIYRuZRT_Cmds );
+  zcl_registerCmdList( DIYRuZRT_ENDPOINT_1, zclCmdsArraySize, zclDIYRuZRT_Cmds );
+  zcl_registerCmdList( DIYRuZRT_ENDPOINT_2, zclCmdsArraySize, zclDIYRuZRT_Cmds );
+  zcl_registerCmdList( DIYRuZRT_ENDPOINT_3, zclCmdsArraySize, zclDIYRuZRT_Cmds );
+  zcl_registerCmdList( DIYRuZRT_ENDPOINT_4, zclCmdsArraySize, zclDIYRuZRT_Cmds );
 #endif
 
   // Подписка задачи на получение всех событий для кнопок
@@ -170,34 +280,36 @@ void zclDIYRuZRT_Init( byte task_id )
 #ifdef ZCL_DIAGNOSTIC
   // Register the application's callback function to read/write attribute data.
   // This is only required when the attribute data format is unknown to ZCL.
-  zcl_registerReadWriteCB( DIYRuZRT_ENDPOINT, zclDiagnostic_ReadWriteAttrCB, NULL );
+  // 注意：ZCL_DIAGNOSTIC 仅注册 EP1
+  zcl_registerReadWriteCB( DIYRuZRT_ENDPOINT_1, zclDiagnostic_ReadWriteAttrCB, NULL );
 
   if ( zclDiagnostic_InitStats() == ZSuccess )
   {
     // Here the user could start the timer to save Diagnostics to NV
   }
 #endif
-  
+
   // Установка адреса и эндпоинта для отправки отчета
   zclDIYRuZRT_DstAddr.addrMode = (afAddrMode_t)AddrNotPresent;
   zclDIYRuZRT_DstAddr.endPoint = 0;
   zclDIYRuZRT_DstAddr.addr.shortAddr = 0;
-  
+
   // инициализируем NVM для хранения RELAY STATE
   if ( SUCCESS == osal_nv_item_init( NV_DIYRuZRT_RELAY_STATE_ID, 1, &RELAY_STATE ) ) {
     // читаем значение RELAY STATE из памяти
     osal_nv_read( NV_DIYRuZRT_RELAY_STATE_ID, 0, 1, &RELAY_STATE );
   }
-  // применяем состояние реле
-  applyRelay();
+
+  // 同步 OnOff 属性变量
+  syncOnOffAttrAll();
+  // 应用初始继电器+LED 状态
+  applyRelayAll();
 
   // запускаем повторяемый таймер события HAL_KEY_EVENT через 100мс
   osal_start_reload_timer( zclDIYRuZRT_TaskID, HAL_KEY_EVENT, 100);
-  
-  // запускаем повторяемый таймер для информирования о температуре (60 сек)
-  osal_start_reload_timer( zclDIYRuZRT_TaskID, DIYRuZRT_REPORTING_EVT,
-                           60000 );
-  
+
+  // 移除温度上报定时器
+
   // Старт процесса возвращения в сеть
   bdb_StartCommissioning(BDB_COMMISSIONING_MODE_PARENT_LOST);
 }
@@ -236,9 +348,12 @@ uint16 zclDIYRuZRT_event_loop( uint8 task_id, uint16 events )
             // отключаем мигание
             osal_stop_timerEx(zclDIYRuZRT_TaskID, HAL_LED_BLINK_EVENT);
             HalLedSet( HAL_LED_2, HAL_LED_MODE_OFF );
-            
-            // отправляем отчет
-            zclDIYRuZRT_ReportOnOff();
+
+            // 上报 4 个 EP 的 OnOff 状态
+            zclDIYRuZRT_ReportOnOff(1);
+            zclDIYRuZRT_ReportOnOff(2);
+            zclDIYRuZRT_ReportOnOff(3);
+            zclDIYRuZRT_ReportOnOff(4);
           }
           break;
 
@@ -288,14 +403,12 @@ uint16 zclDIYRuZRT_event_loop( uint8 task_id, uint16 events )
     return ( events ^ DIYRuZRT_EVT_LONG );
   }
   
-  // событие DIYRuZRT_REPORTING_EVT
-  if (events & DIYRuZRT_REPORTING_EVT) {
-    
-    zclDIYRuZRT_ReportTemp();
-    
-    return (events ^ DIYRuZRT_REPORTING_EVT);
+  // событие DIYRuZRT_EVT_NV_SAVE (延迟保存 NV)
+  if (events & DIYRuZRT_EVT_NV_SAVE) {
+    osal_nv_write(NV_DIYRuZRT_RELAY_STATE_ID, 0, 1, &RELAY_STATE);
+    return events ^ DIYRuZRT_EVT_NV_SAVE;
   }
-  
+
   // событие опроса кнопок
   if (events & HAL_KEY_EVENT)
   {
@@ -317,8 +430,6 @@ static void zclDIYRuZRT_HandleKeys( byte shift, byte keys )
   {
     // Запускаем таймер для определения долгого нажания 5сек
     osal_start_timerEx(zclDIYRuZRT_TaskID, DIYRuZRT_EVT_LONG, 5000);
-    // Переключаем реле
-    updateRelay(RELAY_STATE == 0);
   }
   else
   {
@@ -581,15 +692,10 @@ void DIYRuZRT_HalKeyInit( void )
 
   PUSH1_SEL &= ~(PUSH1_BV); /* Выставляем функцию пина - GPIO */
   PUSH1_DIR &= ~(PUSH1_BV); /* Выставляем режим пина - Вход */
-  
+
   PUSH1_ICTL &= ~(PUSH1_ICTLBIT); /* Не генерируем прерывания на пине */
   PUSH1_IEN &= ~(PUSH1_IENBIT);   /* Очищаем признак включения прерываний */
-  
-  PUSH2_SEL &= ~(PUSH2_BV); /* Set pin function to GPIO */
-  PUSH2_DIR &= ~(PUSH2_BV); /* Set pin direction to Input */
-  
-  PUSH2_ICTL &= ~(PUSH2_ICTLBIT); /* don't generate interrupt */
-  PUSH2_IEN &= ~(PUSH2_IENBIT);   /* Clear interrupt enable bit */
+  // TOUCH1~4 的初始化在后续完善
 }
 
 // Считывание кнопок
@@ -602,13 +708,8 @@ void DIYRuZRT_HalKeyPoll (void)
   {
     keys |= HAL_KEY_SW_1;
   }
-  
-  // нажата кнопка 2 ?
-  if (HAL_PUSH_BUTTON2())
-  {
-    keys |= HAL_KEY_SW_2;
-  }
-  
+  // 触摸按键检测在后续完善
+
   if (keys == halKeySavedKeys)
   {
     // Выход - нет изменений
@@ -621,32 +722,75 @@ void DIYRuZRT_HalKeyPoll (void)
   OnBoard_SendKeys(keys, HAL_KEY_STATE_NORMAL);
 }
 
-// Изменение состояния реле
-void updateRelay ( bool value )
+// Изменение состояния реле (4路)
+static void updateRelay(uint8 ch, bool value)
 {
-  if (value) {
-    RELAY_STATE = 1;
-  } else {
-    RELAY_STATE = 0;
-  }
-  // сохраняем состояние реле
-  osal_nv_write(NV_DIYRuZRT_RELAY_STATE_ID, 0, 1, &RELAY_STATE);
-  // Отображаем новое состояние
-  applyRelay();
-  // отправляем отчет
-  zclDIYRuZRT_ReportOnOff();
+  if (value) RELAY_STATE |= BV(ch);
+  else RELAY_STATE &= ~BV(ch);
+
+  // 同步 OnOff 属性变量
+  syncOnOffAttr(ch);
+  // 应用到硬件
+  applyRelay(ch);
+  // 上报状态
+  zclDIYRuZRT_ReportOnOff(ch + 1);
+
+  // 触发延迟 NV 保存（1秒后）
+  osal_start_timerEx(zclDIYRuZRT_TaskID, DIYRuZRT_EVT_NV_SAVE, 1000);
 }
-  
-// Применение состояние реле
-void applyRelay ( void )
+
+// Применение состояние реле на пины (4路)
+// 硬件反逻辑：继电器 ON → LED 灭；继电器 OFF → LED 亮
+static void applyRelay(uint8 ch)
 {
-  // если выключено
-  if (RELAY_STATE == 0) {
-    // то гасим светодиод 1
-    HalLedSet ( HAL_LED_1, HAL_LED_MODE_OFF );
-  } else {
-    // иначе включаем светодиод 1
-    HalLedSet ( HAL_LED_1, HAL_LED_MODE_ON );
+  uint8 on = (RELAY_STATE >> ch) & 1;
+  switch(ch) {
+    case 0: // EP1
+      if (on) { RELAY_ON(1); HAL_TURN_OFF_LED1(); }
+      else { RELAY_OFF(1); HAL_TURN_ON_LED1(); }
+      break;
+    case 1: // EP2
+      if (on) { RELAY_ON(2); HAL_TURN_OFF_LED2(); }
+      else { RELAY_OFF(2); HAL_TURN_ON_LED2(); }
+      break;
+    case 2: // EP3
+      if (on) { RELAY_ON(3); HAL_TURN_OFF_LED3(); }
+      else { RELAY_OFF(3); HAL_TURN_ON_LED3(); }
+      break;
+    case 3: // EP4
+      if (on) { RELAY_ON(4); HAL_TURN_OFF_LED4(); }
+      else { RELAY_OFF(4); HAL_TURN_ON_LED4(); }
+      break;
+  }
+}
+
+// 应用所有 4 路继电器状态
+static void applyRelayAll(void)
+{
+  uint8 ch;
+  for (ch = 0; ch < 4; ch++) {
+    applyRelay(ch);
+  }
+}
+
+// 同步单路 OnOff 属性变量
+static void syncOnOffAttr(uint8 ch)
+{
+  uint8 val = (RELAY_STATE >> ch) & 1;
+  switch(ch) {
+    case 0: zclDIYRuZRT_OnOff_EP1 = val; break;
+    case 1: zclDIYRuZRT_OnOff_EP2 = val; break;
+    case 2: zclDIYRuZRT_OnOff_EP3 = val; break;
+    case 3: zclDIYRuZRT_OnOff_EP4 = val; break;
+  }
+}
+
+// 同步所有 4 路 OnOff 属性变量
+static void syncOnOffAttrAll(void)
+{
+  uint8 ch;
+  for (ch = 0; ch < 4; ch++) {
+    syncOnOffAttr(ch);
   }
 }
 
@@ -673,33 +817,47 @@ void zclDIYRuZRT_LeaveNetwork( void )
   }
 }
 
-// Обработчик команд кластера OnOff
-static void zclDIYRuZRT_OnOffCB(uint8 cmd)
-{
+// 4 路 OnOff 命令回调
+static void zclDIYRuZRT_OnOffCB_EP1(uint8 cmd) { handleOnOff(1, cmd); }
+static void zclDIYRuZRT_OnOffCB_EP2(uint8 cmd) { handleOnOff(2, cmd); }
+static void zclDIYRuZRT_OnOffCB_EP3(uint8 cmd) { handleOnOff(3, cmd); }
+static void zclDIYRuZRT_OnOffCB_EP4(uint8 cmd) { handleOnOff(4, cmd); }
+
+// 统一处理 OnOff 命令
+static void handleOnOff(uint8 ep, uint8 cmd) {
   // запомним адрес откуда пришла команда
   // чтобы отправить обратно отчет
   afIncomingMSGPacket_t *pPtr = zcl_getRawAFMsg();
   zclDIYRuZRT_DstAddr.addr.shortAddr = pPtr->srcAddr.addr.shortAddr;
-  
+
+  uint8 ch = ep - 1;
   // Включить
   if (cmd == COMMAND_ON) {
-    updateRelay(TRUE);
+    updateRelay(ch, TRUE);
   }
   // Выключить
   else if (cmd == COMMAND_OFF) {
-    updateRelay(FALSE);
+    updateRelay(ch, FALSE);
   }
   // Переключить
   else if (cmd == COMMAND_TOGGLE) {
-    updateRelay(RELAY_STATE == 0);
+    updateRelay(ch, !((RELAY_STATE >> ch) & 1));
   }
 }
 
-// Информирование о состоянии реле
-void zclDIYRuZRT_ReportOnOff(void) {
+// Информирование о состоянии реле (4路)
+void zclDIYRuZRT_ReportOnOff(uint8 ep) {
   const uint8 NUM_ATTRIBUTES = 1;
-
   zclReportCmd_t *pReportCmd;
+  uint8 *pOnOff;
+
+  switch(ep) {
+    case 1: pOnOff = &zclDIYRuZRT_OnOff_EP1; break;
+    case 2: pOnOff = &zclDIYRuZRT_OnOff_EP2; break;
+    case 3: pOnOff = &zclDIYRuZRT_OnOff_EP3; break;
+    case 4: pOnOff = &zclDIYRuZRT_OnOff_EP4; break;
+    default: return;
+  }
 
   pReportCmd = osal_mem_alloc(sizeof(zclReportCmd_t) +
                               (NUM_ATTRIBUTES * sizeof(zclReport_t)));
@@ -708,45 +866,14 @@ void zclDIYRuZRT_ReportOnOff(void) {
 
     pReportCmd->attrList[0].attrID = ATTRID_ON_OFF;
     pReportCmd->attrList[0].dataType = ZCL_DATATYPE_BOOLEAN;
-    pReportCmd->attrList[0].attrData = (void *)(&RELAY_STATE);
+    pReportCmd->attrList[0].attrData = (void *)pOnOff;
 
     zclDIYRuZRT_DstAddr.addrMode = (afAddrMode_t)Addr16Bit;
     zclDIYRuZRT_DstAddr.addr.shortAddr = 0;
-    zclDIYRuZRT_DstAddr.endPoint = 1;
+    zclDIYRuZRT_DstAddr.endPoint = ep;
 
-    zcl_SendReportCmd(DIYRuZRT_ENDPOINT, &zclDIYRuZRT_DstAddr,
+    zcl_SendReportCmd(ep, &zclDIYRuZRT_DstAddr,
                       ZCL_CLUSTER_ID_GEN_ON_OFF, pReportCmd,
-                      ZCL_FRAME_SERVER_CLIENT_DIR, false, SeqNum++);
-  }
-
-  osal_mem_free(pReportCmd);
-}
-
-// Информирование о температуре
-void zclDIYRuZRT_ReportTemp( void )
-{
-  // читаем температуру
-  zclDIYRuZRT_MeasuredValue = readTemperature();
-  
-  const uint8 NUM_ATTRIBUTES = 1;
-
-  zclReportCmd_t *pReportCmd;
-
-  pReportCmd = osal_mem_alloc(sizeof(zclReportCmd_t) +
-                              (NUM_ATTRIBUTES * sizeof(zclReport_t)));
-  if (pReportCmd != NULL) {
-    pReportCmd->numAttr = NUM_ATTRIBUTES;
-
-    pReportCmd->attrList[0].attrID = ATTRID_MS_TEMPERATURE_MEASURED_VALUE;
-    pReportCmd->attrList[0].dataType = ZCL_DATATYPE_INT16;
-    pReportCmd->attrList[0].attrData = (void *)(&zclDIYRuZRT_MeasuredValue);
-
-    zclDIYRuZRT_DstAddr.addrMode = (afAddrMode_t)Addr16Bit;
-    zclDIYRuZRT_DstAddr.addr.shortAddr = 0;
-    zclDIYRuZRT_DstAddr.endPoint = 1;
-
-    zcl_SendReportCmd(DIYRuZRT_ENDPOINT, &zclDIYRuZRT_DstAddr,
-                      ZCL_CLUSTER_ID_MS_TEMPERATURE_MEASUREMENT, pReportCmd,
                       ZCL_FRAME_SERVER_CLIENT_DIR, false, SeqNum++);
   }
 
