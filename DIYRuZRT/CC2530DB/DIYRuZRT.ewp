@@ -3462,12 +3462,6 @@
     <group>
         <name>App</name>
         <file>
-            <name>$PROJ_DIR$\..\Source\ds18b20.c</name>
-        </file>
-        <file>
-            <name>$PROJ_DIR$\..\Source\ds18b20.h</name>
-        </file>
-        <file>
             <name>$PROJ_DIR$\..\Source\hal_board_cfg_DIYRuZRT.h</name>
         </file>
         <file>
