@@ -453,13 +453,16 @@ CONST uint8 zclDIYRuZRT_NumAttributes_EP4 = (sizeof(zclDIYRuZRT_Attrs_EP4) / siz
 // 输入集群列表
 // =====================================================================
 
-// EP1 输入集群列表：genBasic, genIdentify, genGroups, genOnOff
+// EP1 输入集群列表：genBasic, genIdentify, genGroups, genOnOff（+ OTA 预留）
 const cId_t zclDIYRuZRT_InClusterList_EP1[] =
 {
   ZCL_CLUSTER_ID_GEN_BASIC,
   ZCL_CLUSTER_ID_GEN_IDENTIFY,
   ZCL_CLUSTER_ID_GEN_GROUPS,
   ZCL_CLUSTER_ID_GEN_ON_OFF,
+#if ZCL_OTA
+  ZCL_CLUSTER_ID_OTA,
+#endif
 };
 #define ZCLDIYRuZRT_MAX_INCLUSTERS_EP1   (sizeof(zclDIYRuZRT_InClusterList_EP1) / sizeof(zclDIYRuZRT_InClusterList_EP1[0]))
 

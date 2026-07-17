@@ -24,6 +24,16 @@
 #define DISABLE_GREENPOWER_BASIC_PROXY
 #define DEFAULT_CHANLIST 0x07FFF800  // Маска для работы на всех каналах
 
-#define HAL_SONOFF // признак сборки для Sonoff Zigbee
+// 4路智能开关：不复用 Sonoff 配置（避免 LED1=P0_7/LED2=P1_0 与 TOUCH4/RELAY1 引脚冲突）
+// OSC32K_CRYSTAL_INSTALLED 在 hal_board_cfg_DIYRuZRT.h 中独立定义为 FALSE
+
+// OTA 预留（当前关闭，后续版本启用时改为 1 并实现 OTA Cluster 服务端回调）
+// OTA 分区规划（CC2530F256，256KB Flash）：
+//   Boot Loader:  8KB  (0x0000~0x1FFF, 4 pages)
+//   用户代码:    114KB  (0x2000~0x1FFFF, ~57 pages)
+//   OTA 预留:   ~120KB  (0x20000~0x3DFFF, ~60 pages)
+//   NV:          12KB  (0x3E000~0x3FFFF, 6 pages)
+//   Lock Bits:    2KB  (0x3FE00~0x3FFFF, 1 page)
+#define ZCL_OTA 0
 
 #include "hal_board_cfg_DIYRuZRT.h"

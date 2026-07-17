@@ -18,13 +18,8 @@
 // Частота процессора
 #define HAL_CPU_CLOCK_MHZ     32
 
-// Флаг наличия кварца
-#ifdef HAL_SONOFF
-  //#define HAL_CLOCK_CRYSTAL
-  #define OSC32K_CRYSTAL_INSTALLED FALSE
-#else
-  #define HAL_CLOCK_CRYSTAL
-#endif
+// 32K 时钟源：使用内部 RC（CC2530 最小系统无外部 32K 晶振）
+#define OSC32K_CRYSTAL_INSTALLED FALSE
 
 /* 32 kHz clock source select in CLKCONCMD */
 #if !defined (OSC32K_CRYSTAL_INSTALLED) || (defined (OSC32K_CRYSTAL_INSTALLED) && (OSC32K_CRYSTAL_INSTALLED == TRUE))
@@ -43,43 +38,30 @@
 
 #define HAL_LED_BLINK_DELAY()   st( { volatile uint32 i; for (i=0; i<0x5800; i++) { }; } )
 
-#ifdef HAL_SONOFF
-  /* 1 - P0_7 Реле */
-  #define LED1_BV           BV(7)
-  #define LED1_SBIT         P0_7
-  #define LED1_DDR          P0DIR
-  #define LED1_POLARITY     ACTIVE_HIGH
+// 4 路 LED 配置（继电器 OFF 时 LED 亮，ACTIVE_HIGH）
+/* LED1 - P0_0 */
+#define LED1_BV           BV(0)
+#define LED1_SBIT         P0_0
+#define LED1_DDR          P0DIR
+#define LED1_POLARITY     ACTIVE_HIGH
 
-  /* 2 - P1_0 Синий */
-  #define LED2_BV           BV(0)
-  #define LED2_SBIT         P1_0
-  #define LED2_DDR          P1DIR
-  #define LED2_POLARITY     ACTIVE_LOW
-#else
-  /* LED1 - P0_0（继电器 OFF 时 LED 亮，ACTIVE_HIGH） */
-  #define LED1_BV           BV(0)
-  #define LED1_SBIT         P0_0
-  #define LED1_DDR          P0DIR
-  #define LED1_POLARITY     ACTIVE_HIGH
+/* LED2 - P0_1 */
+#define LED2_BV           BV(1)
+#define LED2_SBIT         P0_1
+#define LED2_DDR          P0DIR
+#define LED2_POLARITY     ACTIVE_HIGH
 
-  /* LED2 - P0_1 */
-  #define LED2_BV           BV(1)
-  #define LED2_SBIT         P0_1
-  #define LED2_DDR          P0DIR
-  #define LED2_POLARITY     ACTIVE_HIGH
+/* LED3 - P0_2 */
+#define LED3_BV           BV(2)
+#define LED3_SBIT         P0_2
+#define LED3_DDR          P0DIR
+#define LED3_POLARITY     ACTIVE_HIGH
 
-  /* LED3 - P0_2 */
-  #define LED3_BV           BV(2)
-  #define LED3_SBIT         P0_2
-  #define LED3_DDR          P0DIR
-  #define LED3_POLARITY     ACTIVE_HIGH
-
-  /* LED4 - P0_3 */
-  #define LED4_BV           BV(3)
-  #define LED4_SBIT         P0_3
-  #define LED4_DDR          P0DIR
-  #define LED4_POLARITY     ACTIVE_HIGH
-#endif
+/* LED4 - P0_3 */
+#define LED4_BV           BV(3)
+#define LED4_SBIT         P0_3
+#define LED4_DDR          P0DIR
+#define LED4_POLARITY     ACTIVE_HIGH
 
 // 继电器配置（低电平触发吸合，高电平断开）
 /* RELAY1 - P1_0 */
