@@ -1,40 +1,18 @@
-# Prerequisites
-*.d
+# IAR 编译输出
+DIYRuZRT/CC2530DB/RouterEB/
+DIYRuZRT/CC2530DB/CoordinatorEB/
+DIYRuZRT/CC2530DB/EndDeviceEB/
+DIYRuZRT/CC2530DB/settings/
+*.dep
 
 # Object files
 *.o
-*.ko
 *.obj
 *.elf
-
-# Linker output
-*.ilk
-*.map
-*.exp
 
 # Precompiled Headers
 *.gch
 *.pch
-
-# Libraries
-*.lib
-*.a
-*.la
-*.lo
-
-# Shared objects (inc. Windows DLLs)
-*.dll
-*.so
-*.so.*
-*.dylib
-
-# Executables
-*.exe
-*.out
-*.app
-*.i*86
-*.x86_64
-*.hex
 
 # Debug files
 *.dSYM/
@@ -42,16 +20,9 @@
 *.idb
 *.pdb
 
-# Kernel Module Compile Results
-*.mod*
-*.cmd
-.tmp_versions/
-modules.order
-Module.symvers
-Mkfile.old
-dkms.conf
+# OS 文件
+Thumbs.db
+.DS_Store
 
-DIYRuZRT/CC2530DB/RouterEB/
-DIYRuZRT/CC2530DB/CoordinatorEB/
-DIYRuZRT/CC2530DB/EndDeviceEB/
-DIYRuZRT/CC2530DB/settings/
+# IDE
+.trae/
