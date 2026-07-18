@@ -12,6 +12,9 @@
 #include "zcl_ha.h"
 #include "zcl_diagnostic.h"
 #include "zcl_DIYRuZRT.h"
+#if defined ( ZCL_OTA )
+  #include "zcl_ota.h"
+#endif
 
 #include "bdb.h"
 #include "bdb_interface.h"
@@ -310,6 +313,11 @@ void zclDIYRuZRT_Init( byte task_id )
   osal_start_reload_timer( zclDIYRuZRT_TaskID, HAL_KEY_EVENT, 100);
 
   // 移除温度上报定时器
+
+#if defined ( ZCL_OTA )
+  // 注册应用任务到 OTA 模块，使 OTA 完成后能回调应用
+  zclOTA_Register( zclDIYRuZRT_TaskID );
+#endif
 
   // Старт процесса возвращения в сеть
   bdb_StartCommissioning(BDB_COMMISSIONING_MODE_PARENT_LOST);

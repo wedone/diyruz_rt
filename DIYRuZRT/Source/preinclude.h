@@ -31,13 +31,23 @@
 // 4路智能开关：不复用 Sonoff 配置（避免 LED1=P0_7/LED2=P1_0 与 TOUCH4/RELAY1 引脚冲突）
 // OSC32K_CRYSTAL_INSTALLED 在 hal_board_cfg_DIYRuZRT.h 中独立定义为 FALSE
 
-// OTA 预留（当前关闭，后续版本启用时改为 1 并实现 OTA Cluster 服务端回调）
+// OTA 启用（feature/ota 分支）
 // OTA 分区规划（CC2530F256，256KB Flash）：
-//   Boot Loader:  8KB  (0x0000~0x1FFF, 4 pages)
-//   用户代码:    114KB  (0x2000~0x1FFFF, ~57 pages)
-//   OTA 预留:   ~120KB  (0x20000~0x3DFFF, ~60 pages)
-//   NV:          12KB  (0x3E000~0x3FFFF, 6 pages)
-//   Lock Bits:    2KB  (0x3FE00~0x3FFFF, 1 page)
-#define ZCL_OTA 0
+//   Bootloader:   2KB  (0x0000~0x07FF, 1 page, ota-boot.xcl)
+//   应用代码:   ~248KB  (0x0800~0x3DFFF, ota.xcl)
+//     - 应用主体（含 OTA 缓存区）
+//   NV:          12KB  (0x3E000~0x3F7FF, 6 pages)
+//   Lock Bits:    2KB  (0x3F800~0x3FFFF, 1 page)
+// HAL_OTA_DL_MAX = 0x40000 - (6+2)*2KB = 248KB
+// HAL_OTA_DL_SIZE = 248KB / 2 = 124KB（应用）
+// HAL_OTA_DL_OSET = 124KB（OTA 缓存区起始偏移）
+#define ZCL_OTA 1
+
+// OTA 客户端模式：设备作为 OTA 客户端，接收 Z2M 推送的升级
+#define OTA_CLIENT TRUE
+
+// OTA 镜像标识（Z2M OTA index 匹配用）
+#define OTA_MANUFACTURER_ID  0x115F  // DIYRuZ 自定义制造商 ID
+#define OTA_TYPE_ID          0x0004  // 4 路开关镜像类型
 
 #include "hal_board_cfg_DIYRuZRT.h"

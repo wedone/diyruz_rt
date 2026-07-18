@@ -27,6 +27,10 @@
 
 #include "zcl_DIYRuZRT.h"
 
+#if defined ( ZCL_OTA )
+  #include "zcl_ota.h"
+#endif
+
 
 // Последовательность обработчиков в этой таблице должно соответствовать
 // порядку инициализации задач в osalInitTask
@@ -35,7 +39,7 @@ const pTaskEventHandlerFn tasksArr[] = {
   nwk_event_loop,
 #if !defined (DISABLE_GREENPOWER_BASIC_PROXY) && (ZG_BUILD_RTR_TYPE)
   gp_event_loop,
-#endif  
+#endif
   Hal_ProcessEvent,
 #if defined( MT_TASK )
   MT_ProcessEvent,
@@ -62,6 +66,9 @@ const pTaskEventHandlerFn tasksArr[] = {
   #endif
   zcl_event_loop,
   bdb_event_loop,
+#if defined ( ZCL_OTA )
+  zclOTA_event_loop,
+#endif
   zclDIYRuZRT_event_loop
 };
 
@@ -97,5 +104,8 @@ void osalInitTasks( void )
 
   zcl_Init( taskID++ );
   bdb_Init( taskID++ );
+#if defined ( ZCL_OTA )
+  zclOTA_Init( taskID++ );
+#endif
   zclDIYRuZRT_Init( taskID );
 }

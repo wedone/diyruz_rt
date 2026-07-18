@@ -1998,7 +1998,7 @@
                 </option>
                 <option>
                     <name>XclFile</name>
-                    <state>$PROJ_DIR$\..\..\Tools\CC2530DB\f8w2530.xcl</state>
+                    <state>$PROJ_DIR$\..\..\Tools\CC2530DB\ota.xcl</state>
                 </option>
                 <option>
                     <name>XclFileSlave</name>
@@ -3627,6 +3627,12 @@
                         <name>$PROJ_DIR$\..\..\Components\hal\target\CC2530EB\hal_led.c</name>
                     </file>
                     <file>
+                        <name>$PROJ_DIR$\..\..\Components\hal\target\CC2530EB\hal_ota.c</name>
+                    </file>
+                    <file>
+                        <name>$PROJ_DIR$\..\..\Components\hal\target\CC2530EB\hal_ota.h</name>
+                    </file>
+                    <file>
                         <name>$PROJ_DIR$\..\..\Components\hal\target\CC2530EB\hal_sleep.c</name>
                     </file>
                     <file>
@@ -3902,6 +3908,12 @@
             <name>$PROJ_DIR$\..\..\Components\mt\MT_SYS.c</name>
         </file>
         <file>
+            <name>$PROJ_DIR$\..\..\Components\mt\MT_OTA.c</name>
+        </file>
+        <file>
+            <name>$PROJ_DIR$\..\..\Components\mt\MT_OTA.h</name>
+        </file>
+        <file>
             <name>$PROJ_DIR$\..\..\Components\mt\MT_SYS.h</name>
         </file>
         <file>
@@ -4095,6 +4107,18 @@
         </file>
         <file>
             <name>$PROJ_DIR$\..\Source\zcl_ha.h</name>
+        </file>
+        <file>
+            <name>$PROJ_DIR$\..\..\Components\stack\zcl\ota_common.c</name>
+        </file>
+        <file>
+            <name>$PROJ_DIR$\..\..\Components\stack\zcl\ota_common.h</name>
+        </file>
+        <file>
+            <name>$PROJ_DIR$\..\..\Components\stack\zcl\zcl_ota.c</name>
+        </file>
+        <file>
+            <name>$PROJ_DIR$\..\..\Components\stack\zcl\zcl_ota.h</name>
         </file>
     </group>
     <group>
