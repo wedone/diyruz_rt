@@ -22,7 +22,11 @@
 #define ZCL_REPORTING_DEVICE
 
 #define DISABLE_GREENPOWER_BASIC_PROXY
-#define DEFAULT_CHANLIST 0x07FFF800  // Маска для работы на всех каналах
+
+// 通道掩码：覆盖所有 Zigbee 2.4GHz 通道（11~26）
+// 先 #undef 避免 f8wConfig.cfg 中 -DDEFAULT_CHANLIST 的重定义警告
+#undef DEFAULT_CHANLIST
+#define DEFAULT_CHANLIST 0x07FFF800
 
 // 4路智能开关：不复用 Sonoff 配置（避免 LED1=P0_7/LED2=P1_0 与 TOUCH4/RELAY1 引脚冲突）
 // OSC32K_CRYSTAL_INSTALLED 在 hal_board_cfg_DIYRuZRT.h 中独立定义为 FALSE
