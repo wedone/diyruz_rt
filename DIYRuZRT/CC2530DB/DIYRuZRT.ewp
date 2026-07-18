@@ -460,7 +460,7 @@
                 </option>
                 <option>
                     <name>PreInclude</name>
-                    <state></state>
+                    <state>$PROJ_DIR$\..\Source\preinclude.h</state>
                 </option>
                 <option>
                     <name>CCLibConfigHeader</name>
@@ -2760,7 +2760,7 @@
                 </option>
                 <option>
                     <name>PreInclude</name>
-                    <state></state>
+                    <state>$PROJ_DIR$\..\Source\preinclude.h</state>
                 </option>
                 <option>
                     <name>CCLibConfigHeader</name>

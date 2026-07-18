@@ -24,6 +24,7 @@
 #include "hal_led.h"
 #include "hal_key.h"
 #include "hal_drivers.h"
+#include "hal_board_cfg_DIYRuZRT.h"  /* PUSH/RELAY/TOUCH 宏定义（确保在 preinclude 机制未生效时仍可用） */
 
 // Идентификатор задачи нашего приложения
 byte zclDIYRuZRT_TaskID;
