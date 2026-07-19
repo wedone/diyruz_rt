@@ -11,6 +11,15 @@
 #define ZTOOL_P1
 #define DIY_DEBUG_UART
 
+// DIY_DEBUG_UART 模式下缩小 UART DMA 缓冲以节省 XDATA
+// 默认 RX/TX 各 128 字节（rxBuf 用 uint16 实际占 256 字节 + txBuf[2][128] 占 256 字节 = 512 字节）
+// 调试日志单行 < 50 字节，64 字节缓冲足够，可节省 ~256 字节 XDATA
+// OnBoard.h 中已加 #ifndef 保护，这里提前 #define 即可生效
+#if defined(DIY_DEBUG_UART)
+#define MT_UART_TX_BUFF_MAX  64
+#define MT_UART_RX_BUFF_MAX  64
+#endif
+
 #define MT_TASK
 #define MT_APP_FUNC
 #define MT_SYS_FUNC
