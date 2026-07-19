@@ -18,6 +18,8 @@
 #if defined(DIY_DEBUG_UART)
 #define MT_UART_TX_BUFF_MAX  64
 #define MT_UART_RX_BUFF_MAX  64
+// 统一使用 115200，与裸寄存器诊断 UART 保持一致
+#define MT_UART_DEFAULT_BAUDRATE  HAL_UART_BR_115200
 #endif
 
 #define MT_TASK
