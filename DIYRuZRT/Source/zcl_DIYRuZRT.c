@@ -29,35 +29,10 @@
 #if defined(DIY_DEBUG_UART)
 #include "hal_uart.h"
 /* 调试串口日志：通过 UART0 (P0_2 RX / P0_3 TX) 输出文本日志
- * 依赖 MT_UART 在 ZTOOL_P1 启用后已对 UART0 完成 HalUARTOpen(38400, 8N1)
- * 业务代码只需调用 HalUARTWrite 即可，无需再次初始化 */
+ * 依赖 MT_UART 在 ZTOOL_P1 启用后已对 UART0 完成 HalUARTOpen(115200, 8N1)
+ * 业务代码只需调用 HalUARTWrite 即可，无需再次初始化
+ * 注意：必须禁用 MT_UART_DEFAULT_OVERFLOW（硬件流控），否则 CTS 悬空会导致 UART 发送卡死 */
 #define DIY_LOG_PORT  HAL_UART_PORT_0
-
-/* 裸寄存器 UART 输出：不依赖任何 HAL 框架
- * 用于最早期诊断：如果按 RESET 后能在 115200 收到 "RAW BOOT"，
- * 说明硬件通路 OK；否则硬件接线或固件未烧录 */
-static void diy_raw_uart_putc(char c)
-{
-  volatile uint8 i;
-  /* UART0 Alt-1: P0_2 RX, P0_3 TX, 115200 @ 32MHz */
-  PERCFG &= ~0x01;       /* UART0 用 Alt-1 位置 */
-  P0SEL  |= 0x0C;        /* P0_2, P0_3 切到外设功能 */
-  P0DIR  |= 0x08;        /* P0_3 (TX) 输出方向 */
-  U0CSR   = 0x80;        /* UART 模式 */
-  U0GCR   = 11;          /* BAUD_E = 11 (115200 @ 32MHz) */
-  U0BAUD  = 216;         /* BAUD_M = 216 (115200 @ 32MHz) */
-  UTX0IF  = 0;           /* 清 TX 中断标志 */
-  U0DBUF  = (uint8)c;    /* 写入数据寄存器触发发送 */
-  while (!UTX0IF);       /* 等待发送完成 */
-  UTX0IF  = 0;
-  /* 短延时，避免连续字符丢失 */
-  for (i = 0; i < 100; i++);
-}
-
-static void diy_raw_uart_str(const char *s)
-{
-  while (*s) diy_raw_uart_putc(*s++);
-}
 
 static void diy_log_str(const char *s)
 {
@@ -319,12 +294,6 @@ static zclGeneral_AppCallbacks_t zclDIYRuZRT_CmdCallbacks_EP4 =
 // Функция инициализации задачи приложения
 void zclDIYRuZRT_Init( byte task_id )
 {
-#if defined(DIY_DEBUG_UART)
-  /* 最早期诊断：裸寄存器 UART 输出，不依赖任何 HAL/MT_UART 初始化
-   * 如果按 RESET 后能在 38400 8N1 收到这行，说明硬件通路 OK */
-  diy_raw_uart_str("RAW BOOT\r\n");
-#endif
-
   zclDIYRuZRT_TaskID = task_id;
 
   // 注册 4 个 Endpoint 的 SimpleDescriptor

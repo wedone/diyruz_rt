@@ -5,21 +5,21 @@
 
 // ====== 调试串口开关 ======
 // 启用 ZTOOL_P1 后，MT_UART 会用 UART0 Alt-1 (P0_2=RX, P0_3=TX) 初始化串口
-// 由于 LED3/LED4 当前占用 P0_2/P0_3，启用本开关后需在 hal_board_cfg_DIYRuZRT.h
-// 中通过 DIY_DEBUG_UART 屏蔽 LED3/LED4，把 P0_2/P0_3 让给 UART
-// 调试完成后将 ZTOOL_P1 改回 xZTOOL_P1 并删除 DIY_DEBUG_UART 即可恢复
+// Z-Stack 通过 MT_UART 输出系统日志（ZDO 状态、AF 数据等）
+// 由于 LED3/LED4 占用 P0_2/P0_3，启用 DIY_DEBUG_UART 让 LED3/LED4 让出引脚给 UART
 #define ZTOOL_P1
 #define DIY_DEBUG_UART
 
 // DIY_DEBUG_UART 模式下缩小 UART DMA 缓冲以节省 XDATA
-// 默认 RX/TX 各 128 字节（rxBuf 用 uint16 实际占 256 字节 + txBuf[2][128] 占 256 字节 = 512 字节）
-// 调试日志单行 < 50 字节，64 字节缓冲足够，可节省 ~256 字节 XDATA
-// OnBoard.h 中已加 #ifndef 保护，这里提前 #define 即可生效
+// 默认 RX/TX 各 128 字节，调试日志单行 < 50 字节，64 字节缓冲足够
 #if defined(DIY_DEBUG_UART)
 #define MT_UART_TX_BUFF_MAX  64
 #define MT_UART_RX_BUFF_MAX  64
-// 统一使用 115200，与裸寄存器诊断 UART 保持一致
+// 统一使用 115200，与 Z-Stack MT_UART 默认波特率一致
 #define MT_UART_DEFAULT_BAUDRATE  HAL_UART_BR_115200
+// 禁用硬件流控（RTS/CTS）：CC2530 模块未接 CTS 引脚，启用流控会导致 UART 发送卡死
+// MT_UART.h 中默认值为 TRUE，这里显式覆盖为 FALSE
+#define MT_UART_DEFAULT_OVERFLOW  FALSE
 #endif
 
 #define MT_TASK

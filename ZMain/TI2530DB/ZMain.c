@@ -70,28 +70,6 @@ static void zmain_vdd_check( void );
 static void zmain_lcd_init( void );
 #endif
 
-#if defined(DIY_DEBUG_UART)
-/* 裸寄存器 UART 输出，不依赖任何 HAL 框架
- * 用于在 main() 最早期诊断：确认 32MHz 时钟已稳定、HAL_BOARD_INIT 已完成
- * 115200 8N1 @ 32MHz, UART0 Alt-1 (P0_3=TX) */
-static void zmain_raw_putc(char c)
-{
-  volatile uint8 i;
-  PERCFG &= ~0x01;       /* UART0 Alt-1 */
-  P0SEL  |= 0x0C;        /* P0_2, P0_3 外设 */
-  P0DIR  |= 0x08;        /* P0_3 TX 输出 */
-  U0CSR   = 0x80;        /* UART 模式 */
-  U0GCR   = 11;          /* BAUD_E=11 (115200 @ 32MHz) */
-  U0BAUD  = 216;         /* BAUD_M=216 (115200 @ 32MHz) */
-  UTX0IF  = 0;
-  U0DBUF  = (uint8)c;
-  while (!UTX0IF);
-  UTX0IF  = 0;
-  for (i = 0; i < 100; i++);
-}
-static void zmain_raw_str(const char *s) { while (*s) zmain_raw_putc(*s++); }
-#endif
-
 /*********************************************************************
  * @fn      main
  * @brief   First function called after startup.
@@ -105,54 +83,23 @@ int main( void )
   // Initialization for board related stuff such as LEDs
   HAL_BOARD_INIT();
 
-#if defined(DIY_DEBUG_UART)
-  /* HAL_BOARD_INIT 完成后 32MHz XOSC 已稳定，立即输出诊断字符串
-   * 如果能收到 "M1"，说明时钟和裸 UART 通路 OK
-   * 后续每步加一个标记，可定位卡死位置 */
-  zmain_raw_str("M1\r\n");
-#endif
- 
   // Make sure supply voltage is high enough to run
   zmain_vdd_check();
-
-#if defined(DIY_DEBUG_UART)
-  zmain_raw_str("M2\r\n");
-#endif
 
   // Initialize board I/O
   InitBoard( OB_COLD );
 
-#if defined(DIY_DEBUG_UART)
-  zmain_raw_str("M3\r\n");
-#endif
-
   // Initialze HAL drivers
   HalDriverInit();
-
-#if defined(DIY_DEBUG_UART)
-  zmain_raw_str("M4\r\n");
-#endif
 
   // Initialize NV System
   osal_nv_init( NULL );
 
-#if defined(DIY_DEBUG_UART)
-  zmain_raw_str("M5\r\n");
-#endif
-
   // Initialize the MAC
   ZMacInit();
 
-#if defined(DIY_DEBUG_UART)
-  zmain_raw_str("M6\r\n");
-#endif
-
   // Determine the extended address
   zmain_ext_addr();
-
-#if defined(DIY_DEBUG_UART)
-  zmain_raw_str("M7\r\n");
-#endif
 
 #if defined ZCL_KEY_ESTABLISH
   // Initialize the Certicom certificate information.
@@ -162,10 +109,6 @@ int main( void )
   // Initialize basic NV items
   zgInit();
 
-#if defined(DIY_DEBUG_UART)
-  zmain_raw_str("M8\r\n");
-#endif
-
 #ifndef NONWK
   // Since the AF isn't a task, call it's initialization routine
   afInit();
@@ -173,10 +116,6 @@ int main( void )
 
   // Initialize the operating system
   osal_init_system();
-
-#if defined(DIY_DEBUG_UART)
-  zmain_raw_str("M9\r\n");
-#endif
 
   // Allow interrupts
   osal_int_enable( INTS_ALL );
