@@ -26,6 +26,58 @@
 #include "hal_drivers.h"
 #include "hal_board_cfg_DIYRuZRT.h"  /* PUSH/RELAY/TOUCH 宏定义（确保在 preinclude 机制未生效时仍可用） */
 
+#if defined(DIY_DEBUG_UART)
+#include "hal_uart.h"
+/* 调试串口日志：通过 UART0 (P0_2 RX / P0_3 TX) 输出文本日志
+ * 依赖 MT_UART 在 ZTOOL_P1 启用后已对 UART0 完成 HalUARTOpen(38400, 8N1)
+ * 业务代码只需调用 HalUARTWrite 即可，无需再次初始化 */
+#define DIY_LOG_PORT  HAL_UART_PORT_0
+
+static void diy_log_str(const char *s)
+{
+  uint8 len = 0;
+  while (s[len]) len++;
+  if (len) HalUARTWrite(DIY_LOG_PORT, (uint8 *)s, len);
+}
+
+static void diy_log_u8_dec(uint8 v)
+{
+  uint8 buf[3];
+  uint8 i = 0;
+  if (v >= 100) { buf[i++] = (uint8)('0' + (v / 100)); v %= 100; }
+  if (v >= 10 || i > 0) { buf[i++] = (uint8)('0' + (v / 10)); v %= 10; }
+  buf[i++] = (uint8)('0' + v);
+  HalUARTWrite(DIY_LOG_PORT, buf, i);
+}
+
+static void diy_log_u8_hex(uint8 v)
+{
+  uint8 buf[2];
+  uint8 hi = (v >> 4) & 0x0F;
+  uint8 lo = v & 0x0F;
+  buf[0] = (hi < 10) ? (uint8)('0' + hi) : (uint8)('A' + hi - 10);
+  buf[1] = (lo < 10) ? (uint8)('0' + lo) : (uint8)('A' + lo - 10);
+  HalUARTWrite(DIY_LOG_PORT, buf, 2);
+}
+
+static void diy_log_line(const char *s)
+{
+  diy_log_str(s);
+  HalUARTWrite(DIY_LOG_PORT, (uint8 *)"\r\n", 2);
+}
+
+#define DIY_LOG(s)          diy_log_line(s)
+#define DIY_LOG_STR(s)      diy_log_str(s)
+#define DIY_LOG_U8(v)       diy_log_u8_dec(v)
+#define DIY_LOG_HEX(v)      diy_log_u8_hex(v)
+#else
+/* 非调试模式：所有日志宏编译为空，零运行时开销 */
+#define DIY_LOG(s)
+#define DIY_LOG_STR(s)
+#define DIY_LOG_U8(v)
+#define DIY_LOG_HEX(v)
+#endif
+
 // Идентификатор задачи нашего приложения
 byte zclDIYRuZRT_TaskID;
 
@@ -313,6 +365,11 @@ void zclDIYRuZRT_Init( byte task_id )
 
   // Старт процесса возвращения в сеть
   bdb_StartCommissioning(BDB_COMMISSIONING_MODE_PARENT_LOST);
+
+  DIY_LOG("[DIY] zclDIYRuZRT_Init done");
+  DIY_LOG_STR("[DIY] relay_state=0x");
+  DIY_LOG_HEX(RELAY_STATE);
+  DIY_LOG("");
 }
 
 
@@ -341,11 +398,17 @@ uint16 zclDIYRuZRT_event_loop( uint8 task_id, uint16 events )
         case ZDO_STATE_CHANGE:
           zclDIYRuZRT_NwkState = (devStates_t)(MSGpkt->hdr.status);
 
+          DIY_LOG_STR("[DIY] ZDO_STATE_CHANGE: ");
+          DIY_LOG_U8((uint8)zclDIYRuZRT_NwkState);
+          DIY_LOG("");
+
           // Теперь мы в сети
           if ( (zclDIYRuZRT_NwkState == DEV_ZB_COORD) ||
                (zclDIYRuZRT_NwkState == DEV_ROUTER)   ||
                (zclDIYRuZRT_NwkState == DEV_END_DEVICE) )
           {
+            DIY_LOG("[DIY] joined network, report on/off");
+
             // отключаем мигание
             osal_stop_timerEx(zclDIYRuZRT_TaskID, HAL_LED_BLINK_EVENT);
             HalLedSet( HAL_LED_2, HAL_LED_MODE_OFF );
@@ -385,22 +448,24 @@ uint16 zclDIYRuZRT_event_loop( uint8 task_id, uint16 events )
     // В сети или не в сети?
     if ( bdbAttributes.bdbNodeIsOnANetwork )
     {
+      DIY_LOG("[DIY] EVT_LONG: leave network");
       // покидаем сеть
       zclDIYRuZRT_LeaveNetwork();
     }
-    else 
+    else
     {
+      DIY_LOG("[DIY] EVT_LONG: start commissioning");
       // инициируем вход в сеть
       bdb_StartCommissioning(
-        BDB_COMMISSIONING_MODE_NWK_FORMATION | 
-        BDB_COMMISSIONING_MODE_NWK_STEERING | 
-        BDB_COMMISSIONING_MODE_FINDING_BINDING | 
+        BDB_COMMISSIONING_MODE_NWK_FORMATION |
+        BDB_COMMISSIONING_MODE_NWK_STEERING |
+        BDB_COMMISSIONING_MODE_FINDING_BINDING |
         BDB_COMMISSIONING_MODE_INITIATOR_TL
       );
       // будем мигать пока не подключимся
       osal_start_timerEx(zclDIYRuZRT_TaskID, DIYRuZRT_EVT_BLINK, 500);
     }
-    
+
     return ( events ^ DIYRuZRT_EVT_LONG );
   }
   
@@ -443,6 +508,12 @@ static void zclDIYRuZRT_HandleKeys( byte shift, byte keys )
 // Обработчик изменения статусов соединения с сетью
 static void zclDIYRuZRT_ProcessCommissioningStatus(bdbCommissioningModeMsg_t *bdbCommissioningModeMsg)
 {
+  DIY_LOG_STR("[DIY] commission mode=");
+  DIY_LOG_U8(bdbCommissioningModeMsg->bdbCommissioningMode);
+  DIY_LOG_STR(" status=");
+  DIY_LOG_U8(bdbCommissioningModeMsg->bdbCommissioningStatus);
+  DIY_LOG("");
+
   switch(bdbCommissioningModeMsg->bdbCommissioningMode)
   {
     case BDB_COMMISSIONING_FORMATION:
@@ -740,6 +811,9 @@ void DIYRuZRT_HalKeyPoll (void)
       {
         if (falling & BV(ch))
         {
+          DIY_LOG_STR("[DIY] touch ch=");
+          DIY_LOG_U8(ch + 1);
+          DIY_LOG(" down");
           // 切换对应通道继电器状态
           updateRelay(ch, !((RELAY_STATE >> ch) & 1));
         }
@@ -765,6 +839,12 @@ static void updateRelay(uint8 ch, bool value)
 {
   if (value) RELAY_STATE |= BV(ch);
   else RELAY_STATE &= ~BV(ch);
+
+  DIY_LOG_STR("[DIY] relay ch=");
+  DIY_LOG_U8(ch + 1);
+  DIY_LOG_STR(" -> ");
+  DIY_LOG_U8(value ? 1 : 0);
+  DIY_LOG("");
 
   // 同步 OnOff 属性变量
   syncOnOffAttr(ch);
@@ -836,8 +916,10 @@ static void syncOnOffAttrAll(void)
 // Инициализация выхода из сети
 void zclDIYRuZRT_LeaveNetwork( void )
 {
+  DIY_LOG("[DIY] LeaveNetwork");
+
   zclDIYRuZRT_ResetAttributesToDefaultValues();
-  
+
   NLME_LeaveReq_t leaveReq;
   // Set every field to 0
   osal_memset(&leaveReq, 0, sizeof(NLME_LeaveReq_t));
@@ -850,6 +932,7 @@ void zclDIYRuZRT_LeaveNetwork( void )
 
   // Leave the network, and reset afterwards
   if (NLME_LeaveReq(&leaveReq) != ZSuccess) {
+    DIY_LOG("[DIY] LeaveReq fail, reset anyway");
     // Couldn't send out leave; prepare to reset anyway
     ZDApp_LeaveReset(FALSE);
   }
@@ -867,6 +950,15 @@ static void handleOnOff(uint8 ep, uint8 cmd) {
   // чтобы отправить обратно отчет
   afIncomingMSGPacket_t *pPtr = zcl_getRawAFMsg();
   zclDIYRuZRT_DstAddr.addr.shortAddr = pPtr->srcAddr.addr.shortAddr;
+
+  DIY_LOG_STR("[DIY] onoff ep=");
+  DIY_LOG_U8(ep);
+  DIY_LOG_STR(" cmd=0x");
+  DIY_LOG_HEX(cmd);
+  DIY_LOG_STR(" src=0x");
+  DIY_LOG_HEX(HI_UINT16(pPtr->srcAddr.addr.shortAddr));
+  DIY_LOG_HEX(LO_UINT16(pPtr->srcAddr.addr.shortAddr));
+  DIY_LOG("");
 
   uint8 ch = ep - 1;
   // Включить
@@ -914,6 +1006,12 @@ void zclDIYRuZRT_ReportOnOff(uint8 ep) {
                       ZCL_CLUSTER_ID_GEN_ON_OFF, pReportCmd,
                       ZCL_FRAME_SERVER_CLIENT_DIR, false, SeqNum++);
   }
+
+  DIY_LOG_STR("[DIY] report ep=");
+  DIY_LOG_U8(ep);
+  DIY_LOG_STR(" val=");
+  DIY_LOG_U8(*pOnOff);
+  DIY_LOG("");
 
   osal_mem_free(pReportCmd);
 }

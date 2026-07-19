@@ -2,7 +2,15 @@
 #define TC_LINKKEY_JOIN
 #define NV_INIT
 #define NV_RESTORE
-#define xZTOOL_P1
+
+// ====== 调试串口开关 ======
+// 启用 ZTOOL_P1 后，MT_UART 会用 UART0 Alt-1 (P0_2=RX, P0_3=TX) 初始化串口
+// 由于 LED3/LED4 当前占用 P0_2/P0_3，启用本开关后需在 hal_board_cfg_DIYRuZRT.h
+// 中通过 DIY_DEBUG_UART 屏蔽 LED3/LED4，把 P0_2/P0_3 让给 UART
+// 调试完成后将 ZTOOL_P1 改回 xZTOOL_P1 并删除 DIY_DEBUG_UART 即可恢复
+#define ZTOOL_P1
+#define DIY_DEBUG_UART
+
 #define MT_TASK
 #define MT_APP_FUNC
 #define MT_SYS_FUNC

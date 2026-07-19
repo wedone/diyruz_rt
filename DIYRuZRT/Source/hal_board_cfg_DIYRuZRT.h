@@ -33,8 +33,13 @@
 
 // Конфигурация светодиодов
 
-// Количество светодиодов
+// 调试串口模式（DIY_DEBUG_UART）：LED3/LED4 占用的 P0_2/P0_3 让给 UART0 RX/TX
+// 此时仅保留 LED1/LED2 两路指示灯
+#if defined(DIY_DEBUG_UART)
+#define HAL_NUM_LEDS            2
+#else
 #define HAL_NUM_LEDS            4
+#endif
 
 #define HAL_LED_BLINK_DELAY()   st( { volatile uint32 i; for (i=0; i<0x5800; i++) { }; } )
 
@@ -51,6 +56,19 @@
 #define LED2_DDR          P0DIR
 #define LED2_POLARITY     ACTIVE_HIGH
 
+#if defined(DIY_DEBUG_UART)
+// 调试串口模式：LED3/LED4 引脚让给 UART0 (P0_2=RX, P0_3=TX)
+// 将 LED3/LED4 相关宏全部置为空操作，避免业务代码引用时报错
+#define LED3_BV           0
+#define LED3_SBIT         P0_2
+#define LED3_DDR          P0DIR
+#define LED3_POLARITY     ACTIVE_HIGH
+
+#define LED4_BV           0
+#define LED4_SBIT         P0_3
+#define LED4_DDR          P0DIR
+#define LED4_POLARITY     ACTIVE_HIGH
+#else
 /* LED3 - P0_2 */
 #define LED3_BV           BV(2)
 #define LED3_SBIT         P0_2
@@ -62,6 +80,7 @@
 #define LED4_SBIT         P0_3
 #define LED4_DDR          P0DIR
 #define LED4_POLARITY     ACTIVE_HIGH
+#endif
 
 // 继电器配置（低电平触发吸合，高电平断开）
 /* RELAY1 - P1_0 */
@@ -258,6 +277,7 @@ extern void DIYRuZRT_HalKeyInit( void );
   LED1_DDR |= LED1_BV;                                           \
   HAL_TURN_ON_LED2();                                            \
   LED2_DDR |= LED2_BV;                                           \
+  /* 调试串口模式下 LED3/LED4 引脚让给 UART0，不设为输出 */        \
   HAL_TURN_ON_LED3();                                            \
   LED3_DDR |= LED3_BV;                                           \
   HAL_TURN_ON_LED4();                                            \
@@ -361,23 +381,39 @@ extern void DIYRuZRT_HalKeyInit( void );
 // Макросы для управления светодиодами
 #define HAL_TURN_OFF_LED1()       st( LED1_SBIT = LED1_POLARITY (0); )
 #define HAL_TURN_OFF_LED2()       st( LED2_SBIT = LED2_POLARITY (0); )
-#define HAL_TURN_OFF_LED3()       st( LED3_SBIT = LED3_POLARITY (0); )
-#define HAL_TURN_OFF_LED4()       st( LED4_SBIT = LED4_POLARITY (0); )
 
 #define HAL_TURN_ON_LED1()        st( LED1_SBIT = LED1_POLARITY (1); )
 #define HAL_TURN_ON_LED2()        st( LED2_SBIT = LED2_POLARITY (1); )
-#define HAL_TURN_ON_LED3()        st( LED3_SBIT = LED3_POLARITY (1); )
-#define HAL_TURN_ON_LED4()        st( LED4_SBIT = LED4_POLARITY (1); )
 
 #define HAL_TOGGLE_LED1()         st( if (LED1_SBIT) { LED1_SBIT = 0; } else { LED1_SBIT = 1;} )
 #define HAL_TOGGLE_LED2()         st( if (LED2_SBIT) { LED2_SBIT = 0; } else { LED2_SBIT = 1;} )
-#define HAL_TOGGLE_LED3()         st( if (LED3_SBIT) { LED3_SBIT = 0; } else { LED3_SBIT = 1;} )
-#define HAL_TOGGLE_LED4()         st( if (LED4_SBIT) { LED4_SBIT = 0; } else { LED4_SBIT = 1;} )
 
 #define HAL_STATE_LED1()          (LED1_POLARITY (LED1_SBIT))
 #define HAL_STATE_LED2()          (LED2_POLARITY (LED2_SBIT))
+
+#if defined(DIY_DEBUG_UART)
+// 调试串口模式：LED3/LED4 引脚已让给 UART0，操作宏全部置为空操作
+#define HAL_TURN_OFF_LED3()
+#define HAL_TURN_OFF_LED4()
+#define HAL_TURN_ON_LED3()
+#define HAL_TURN_ON_LED4()
+#define HAL_TOGGLE_LED3()
+#define HAL_TOGGLE_LED4()
+#define HAL_STATE_LED3()          (0)
+#define HAL_STATE_LED4()          (0)
+#else
+#define HAL_TURN_OFF_LED3()       st( LED3_SBIT = LED3_POLARITY (0); )
+#define HAL_TURN_OFF_LED4()       st( LED4_SBIT = LED4_POLARITY (0); )
+
+#define HAL_TURN_ON_LED3()        st( LED3_SBIT = LED3_POLARITY (1); )
+#define HAL_TURN_ON_LED4()        st( LED4_SBIT = LED4_POLARITY (1); )
+
+#define HAL_TOGGLE_LED3()         st( if (LED3_SBIT) { LED3_SBIT = 0; } else { LED3_SBIT = 1;} )
+#define HAL_TOGGLE_LED4()         st( if (LED4_SBIT) { LED4_SBIT = 0; } else { LED4_SBIT = 1;} )
+
 #define HAL_STATE_LED3()          (LED3_POLARITY (LED3_SBIT))
 #define HAL_STATE_LED4()          (LED4_POLARITY (LED4_SBIT))
+#endif
       
 
 /* ----------- XNV ---------- */
