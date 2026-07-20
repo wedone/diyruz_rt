@@ -364,8 +364,17 @@ void zclDIYRuZRT_Init( byte task_id )
 
   // 移除温度上报定时器
 
-  // Старт процесса возвращения в сеть
-  bdb_StartCommissioning(BDB_COMMISSIONING_MODE_PARENT_LOST);
+  // 强制写入"新网络"标记，避免 ZDOInitDeviceEx 走恢复网络路径
+  // 对首次启动的工厂新设备，NV 存有残留值可能导致系统试图恢复不存在的网络
+  zgWriteStartupOptions( ZG_STARTUP_SET, ZCD_STARTOPT_DEFAULT_NETWORK_STATE );
+
+  // 启动入网流程：全套 commissioning（与长按 SW1 5秒行为一致）
+  bdb_StartCommissioning(
+    BDB_COMMISSIONING_MODE_NWK_FORMATION |
+    BDB_COMMISSIONING_MODE_NWK_STEERING |
+    BDB_COMMISSIONING_MODE_FINDING_BINDING |
+    BDB_COMMISSIONING_MODE_INITIATOR_TL
+  );
 
   DIY_LOG("[DIY] zclDIYRuZRT_Init done");
   DIY_LOG_STR("[DIY] relay_state=0x");
@@ -537,10 +546,10 @@ static void zclDIYRuZRT_ProcessCommissioningStatus(bdbCommissioningModeMsg_t *bd
       }
       else
       {
-        //See the possible errors for nwk steering procedure
-        //No suitable networks found
-        //Want to try other channels?
-        //try with bdb_setChannelAttribute
+        // 未找到网络，先清空 commissioning mode 绕过 "already running"
+        // 检查，然后重试 NWK_STEERING
+        bdbAttributes.bdbCommissioningMode = 0;
+        bdb_StartCommissioning(BDB_COMMISSIONING_MODE_NWK_STEERING);
       }
     break;
     case BDB_COMMISSIONING_FINDING_BINDING:
@@ -555,12 +564,18 @@ static void zclDIYRuZRT_ProcessCommissioningStatus(bdbCommissioningModeMsg_t *bd
       }
     break;
     case BDB_COMMISSIONING_INITIALIZATION:
-      //Initialization notification can only be successful. Failure on initialization
-      //only happens for ZED and is notified as BDB_COMMISSIONING_PARENT_LOST notification
-
-      //YOUR JOB:
-      //We are on a network, what now?
-
+      if (bdbCommissioningModeMsg->bdbCommissioningStatus == BDB_COMMISSIONING_SUCCESS)
+      {
+        // 已在网络中，继续执行剩余的 commissioning 模式
+        bdb_StartCommissioning(bdbCommissioningModeMsg->bdbRemainingCommissioningModes);
+      }
+      else
+      {
+        // 初始化失败（设备未入网），先清空 commissioning mode 绕过 BDB 的
+        // "already running" 检查，再启动 NWK_STEERING 寻找网络加入
+        bdbAttributes.bdbCommissioningMode = 0;
+        bdb_StartCommissioning(BDB_COMMISSIONING_MODE_NWK_STEERING);
+      }
     break;
 #if ZG_BUILD_ENDDEVICE_TYPE    
     case BDB_COMMISSIONING_PARENT_LOST:
