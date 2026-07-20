@@ -11,9 +11,9 @@
 #define DIY_DEBUG_UART
 
 // DIY_DEBUG_UART 模式下缩小 UART DMA 缓冲以节省 XDATA
-// 默认 RX/TX 各 128 字节，调试日志单行 < 50 字节，64 字节缓冲足够
+// TX 缓冲需容纳多行诊断日志 + MT 二进制帧，128 字节较安全
 #if defined(DIY_DEBUG_UART)
-#define MT_UART_TX_BUFF_MAX  64
+#define MT_UART_TX_BUFF_MAX  128
 #define MT_UART_RX_BUFF_MAX  64
 // 统一使用 115200，与 Z-Stack MT_UART 默认波特率一致
 #define MT_UART_DEFAULT_BAUDRATE  HAL_UART_BR_115200
@@ -49,6 +49,18 @@
 
 // 4路智能开关：不复用 Sonoff 配置（避免 LED1=P0_7/LED2=P1_0 与 TOUCH4/RELAY1 引脚冲突）
 // OSC32K_CRYSTAL_INSTALLED 在 hal_board_cfg_DIYRuZRT.h 中独立定义为 FALSE
+
+// ====== PA/LNA 前端放大驱动 ======
+// 启用后固件配置 CC2530+CC2591/RFX2401C 的 PA(发射放大)+LNA(接收放大)
+// 适用模块：SE ZB Module (CC2530+RFX2401C) 等带前端放大芯片的模块
+// 注意：86 开关裸模块无放大芯片，最终产品版本需移除此定义
+// 引脚分配：P0_7=HGM(高增益模式), P1_0=LNA_EN, P1_1=PA_EN
+// 与 TOUCH4(P0_7) 和 RELAY1(P1_0) 冲突，仅在带放大模块测试时启用
+//
+// 测试记录：
+// - HAL_PA_LNA + OBSSEL P1_0/P1_1 → 0 beacon（SE 模块引脚推断错误？）
+// - 下一步：禁用 HAL_PA_LNA 测试裸 CC2530 模式
+//#define HAL_PA_LNA
 
 // OTA 预留（当前关闭，后续版本启用时改为 1 并实现 OTA Cluster 服务端回调）
 // OTA 分区规划（CC2530F256，256KB Flash）：

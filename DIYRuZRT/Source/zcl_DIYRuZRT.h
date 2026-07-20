@@ -24,6 +24,8 @@ extern "C"
 #define DIYRuZRT_REPORTING_EVT            0x0008
 // 延迟保存 NV
 #define DIYRuZRT_EVT_NV_SAVE              0x0010
+// 周期性 RSSI 诊断（每 2 秒读取并打印当前 RSSI，用于排查 RF 前端是否工作）
+#define DIYRuZRT_EVT_RSSI                 0x0020
   
   
 // NVM IDs

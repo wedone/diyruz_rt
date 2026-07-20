@@ -3,6 +3,10 @@
 #include "AF.h"
 #include "ZDApp.h"
 #include "ZDObject.h"
+#include "ZGlobals.h"
+
+// 外部变量：用于诊断日志
+extern devStartModes_t devStartMode;
 #include "MT_SYS.h"
 
 #include "nwk_util.h"
@@ -24,7 +28,9 @@
 #include "hal_led.h"
 #include "hal_key.h"
 #include "hal_drivers.h"
+#include "hal_mcu.h"                 /* CC2530 RF 寄存器：RSSI / RSSISTAT / FREQCTRL 等（ioCC2530.h） */
 #include "hal_board_cfg_DIYRuZRT.h"  /* PUSH/RELAY/TOUCH 宏定义（确保在 preinclude 机制未生效时仍可用） */
+#include "diy_rf_test.h"             /* 裸机 RF 测试函数 */
 
 #if defined(DIY_DEBUG_UART)
 #include "hal_uart.h"
@@ -92,6 +98,15 @@ static uint8 halKeySavedTouch;
 
 // 4路继电器状态（bit0~3 对应 EP1~4，1=ON, 0=OFF）
 uint8 RELAY_STATE = 0;
+
+// 诊断计数器（通过 ZDO_STATE_CHANGE 输出，避免与 MT 二进制帧冲突）
+// s_init_reached: Init 函数执行进度标记
+//   0=未进入 Init, 1=进入 Init, 2=commissioning 之前, 3=commissioning 之后, 4=osal_start_reload_timer 之后
+// s_rssi_evt_count: RSSI 事件触发次数（验证定时器是否工作）
+// s_zdo_change_count: ZDO_STATE_CHANGE 触发次数
+static uint8 s_init_reached = 0;
+static uint8 s_rssi_evt_count = 0;
+static uint8 s_zdo_change_count = 0;
 
 // Структура для отправки отчета
 afAddrType_t zclDIYRuZRT_DstAddr;
@@ -295,6 +310,7 @@ static zclGeneral_AppCallbacks_t zclDIYRuZRT_CmdCallbacks_EP4 =
 void zclDIYRuZRT_Init( byte task_id )
 {
   zclDIYRuZRT_TaskID = task_id;
+  s_init_reached = 1;  // 进入 Init
 
   // 注册 4 个 Endpoint 的 SimpleDescriptor
   bdb_RegisterSimpleDescriptor( &zclDIYRuZRT_SimpleDesc_EP1 );
@@ -364,22 +380,69 @@ void zclDIYRuZRT_Init( byte task_id )
 
   // 移除温度上报定时器
 
-  // 强制写入"新网络"标记，避免 ZDOInitDeviceEx 走恢复网络路径
-  // 对首次启动的工厂新设备，NV 存有残留值可能导致系统试图恢复不存在的网络
-  zgWriteStartupOptions( ZG_STARTUP_SET, ZCD_STARTOPT_DEFAULT_NETWORK_STATE );
+  // 调用 bdb_setFN() 将设备设为出厂新状态（Factory New）
+  // 这会：1) 清除 bdbNodeIsOnANetwork (RAM+NV)
+  //       2) 设置 ZCD_STARTOPT_DEFAULT_CONFIG_STATE | ZCD_STARTOPT_DEFAULT_NETWORK_STATE
+  // 比 zgWriteStartupOptions 更彻底，确保 ZDOInitDeviceEx 走全新入网路径而非孤儿扫描
+  bdb_setFN();
 
-  // 启动入网流程：全套 commissioning（与长按 SW1 5秒行为一致）
+  // 启动诊断：合并为单次写入避免 MT 二进制数据交错
+  {
+    char diag[80];
+    uint8 bp = 0;
+    uint8 nullAddr[8] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+    const char *p;
+
+    p = "[DIY] FN onNwk=";
+    while (*p) diag[bp++] = *p++;
+    diag[bp++] = '0' + (bdbAttributes.bdbNodeIsOnANetwork ? 1 : 0);
+    p = " opts=0x";
+    while (*p) diag[bp++] = *p++;
+    { uint8 v = zgReadStartupOptions();
+      uint8 hi = (v >> 4) & 0x0F, lo = v & 0x0F;
+      diag[bp++] = (hi < 10) ? ('0'+hi) : ('A'+hi-10);
+      diag[bp++] = (lo < 10) ? ('0'+lo) : ('A'+lo-10);
+    }
+    p = " IEEE=";
+    while (*p) diag[bp++] = *p++;
+    { uint8 i; for(i=0;i<8;i++) {
+      uint8 v = aExtendedAddress[7-i];
+      uint8 hi = (v >> 4) & 0x0F, lo = v & 0x0F;
+      diag[bp++] = (hi < 10) ? ('0'+hi) : ('A'+hi-10);
+      diag[bp++] = (lo < 10) ? ('0'+lo) : ('A'+lo-10);
+    }}
+    if (osal_memcmp(aExtendedAddress, nullAddr, 8)) {
+      p = " ERASED!";
+      while (*p) diag[bp++] = *p++;
+    }
+    diag[bp++] = '\r'; diag[bp++] = '\n';
+    HalUARTWrite(DIY_LOG_PORT, (uint8*)diag, bp);
+  }
+
+  // 启动入网流程：路由器只需 NWK_STEERING（加入现有网络）+ FINDING_BINDING
+  // 注意：不要加 INITIATOR_TL（Touchlink），否则 BDB 会优先进行 Touchlink 扫描
+  //       而不进入网络扫描，导致 MAC 层从不启动 RX（fsm=0x00）
+  // 注意：不要加 NWK_FORMATION（创建网络），路由器不能创建网络（只有协调器能）
+  s_init_reached = 2;  // commissioning 之前
   bdb_StartCommissioning(
-    BDB_COMMISSIONING_MODE_NWK_FORMATION |
     BDB_COMMISSIONING_MODE_NWK_STEERING |
-    BDB_COMMISSIONING_MODE_FINDING_BINDING |
-    BDB_COMMISSIONING_MODE_INITIATOR_TL
+    BDB_COMMISSIONING_MODE_FINDING_BINDING
   );
+  s_init_reached = 3;  // commissioning 之后
 
   DIY_LOG("[DIY] zclDIYRuZRT_Init done");
   DIY_LOG_STR("[DIY] relay_state=0x");
   DIY_LOG_HEX(RELAY_STATE);
   DIY_LOG("");
+
+  // 启动周期性 RSSI 诊断定时器（每 100ms 读取并打印 RF 前端信号强度）
+  // 100ms 间隔能更密集捕获 MAC 扫描时的 RX 开启窗口（每信道 ~150ms）
+  osal_start_reload_timer( zclDIYRuZRT_TaskID, DIYRuZRT_EVT_RSSI, 100 );
+  s_init_reached = 4;  // osal_start_reload_timer 之后
+
+  // === RF 测试标记 ===
+  // 用 DIY_LOG 宏输出（已验证可靠），不用直接 HalUARTWrite
+  DIY_LOG("[DIY] === RF TEST MARK (Init done) ===");
 }
 
 
@@ -407,10 +470,73 @@ uint16 zclDIYRuZRT_event_loop( uint8 task_id, uint16 events )
 
         case ZDO_STATE_CHANGE:
           zclDIYRuZRT_NwkState = (devStates_t)(MSGpkt->hdr.status);
+          s_zdo_change_count++;
 
-          DIY_LOG_STR("[DIY] ZDO_STATE_CHANGE: ");
-          DIY_LOG_U8((uint8)zclDIYRuZRT_NwkState);
-          DIY_LOG("");
+          // 单次写入避免 MT 交错
+          // 增加 FSMSTAT1 和 FREQCTRL 读取，确认扫描期间 RF 是否正常
+          // FSMSTAT1: bit1=TX_ACTIVE, bit2=LOCK_STATUS(频率锁定), bit4=CCA, bit5=SFD
+          // FREQCTRL: 值=11+channel（信道11→0x0B, 信道15→0x0F），=0 说明信道未配置
+          // 末尾追加 init/rssi/zdo 计数器，验证：
+          //   - Init 是否执行到末尾（s_init_reached 应=4）
+          //   - RSSI 定时器是否触发（s_rssi_evt_count 应>0）
+          {
+            char buf[96];
+            uint8 bp = 0;
+            uint8 fsm, freq;
+            const char *p = "[DIY] ZDO_ST:";
+            while (*p) buf[bp++] = *p++;
+            { uint8 v = (uint8)zclDIYRuZRT_NwkState;
+              if (v >= 10) buf[bp++] = '0' + v / 10;
+              buf[bp++] = '0' + v % 10;
+            }
+            p = " ch=";
+            while (*p) buf[bp++] = *p++;
+            { uint32 ch = zgDefaultChannelList;
+              uint8 i;
+              for (i = 0; i < 4; i++) {
+                uint8 v = (uint8)(ch >> (24 - i*8));
+                uint8 hi = (v >> 4) & 0x0F, lo = v & 0x0F;
+                buf[bp++] = (hi < 10) ? ('0'+hi) : ('A'+hi-10);
+                buf[bp++] = (lo < 10) ? ('0'+lo) : ('A'+lo-10);
+              }
+            }
+            fsm = (uint8)FSMSTAT1;
+            freq = (uint8)FREQCTRL;
+            p = " fsm=0x";
+            while (*p) buf[bp++] = *p++;
+            { uint8 v = fsm;
+              uint8 hi = (v >> 4) & 0x0F, lo = v & 0x0F;
+              buf[bp++] = (hi < 10) ? ('0'+hi) : ('A'+hi-10);
+              buf[bp++] = (lo < 10) ? ('0'+lo) : ('A'+lo-10);
+            }
+            p = " freq=0x";
+            while (*p) buf[bp++] = *p++;
+            { uint8 v = freq;
+              uint8 hi = (v >> 4) & 0x0F, lo = v & 0x0F;
+              buf[bp++] = (hi < 10) ? ('0'+hi) : ('A'+hi-10);
+              buf[bp++] = (lo < 10) ? ('0'+lo) : ('A'+lo-10);
+            }
+            // 计数器输出: init=X rssi=Y zdo=Z
+            p = " init=";
+            while (*p) buf[bp++] = *p++;
+            buf[bp++] = '0' + s_init_reached;
+            p = " rssi=";
+            while (*p) buf[bp++] = *p++;
+            { uint8 v = s_rssi_evt_count;
+              if (v >= 100) { buf[bp++] = '0' + v / 100; v %= 100; }
+              if (v >= 10)  { buf[bp++] = '0' + v / 10;  v %= 10; }
+              buf[bp++] = '0' + v;
+            }
+            p = " zdo=";
+            while (*p) buf[bp++] = *p++;
+            { uint8 v = s_zdo_change_count;
+              if (v >= 100) { buf[bp++] = '0' + v / 100; v %= 100; }
+              if (v >= 10)  { buf[bp++] = '0' + v / 10;  v %= 10; }
+              buf[bp++] = '0' + v;
+            }
+            buf[bp++] = '\r'; buf[bp++] = '\n';
+            HalUARTWrite(DIY_LOG_PORT, (uint8*)buf, bp);
+          }
 
           // Теперь мы в сети
           if ( (zclDIYRuZRT_NwkState == DEV_ZB_COORD) ||
@@ -465,12 +591,10 @@ uint16 zclDIYRuZRT_event_loop( uint8 task_id, uint16 events )
     else
     {
       DIY_LOG("[DIY] EVT_LONG: start commissioning");
-      // инициируем вход в сеть
+      // инициируем вход в сеть（路由器只用 NWK_STEERING + FINDING_BINDING）
       bdb_StartCommissioning(
-        BDB_COMMISSIONING_MODE_NWK_FORMATION |
         BDB_COMMISSIONING_MODE_NWK_STEERING |
-        BDB_COMMISSIONING_MODE_FINDING_BINDING |
-        BDB_COMMISSIONING_MODE_INITIATOR_TL
+        BDB_COMMISSIONING_MODE_FINDING_BINDING
       );
       // будем мигать пока не подключимся
       osal_start_timerEx(zclDIYRuZRT_TaskID, DIYRuZRT_EVT_BLINK, 500);
@@ -483,6 +607,70 @@ uint16 zclDIYRuZRT_event_loop( uint8 task_id, uint16 events )
   if (events & DIYRuZRT_EVT_NV_SAVE) {
     osal_nv_write(NV_DIYRuZRT_RELAY_STATE_ID, 0, 1, &RELAY_STATE);
     return events ^ DIYRuZRT_EVT_NV_SAVE;
+  }
+
+  // событие DIYRuZRT_EVT_RSSI (周期性 RF 状态诊断)
+  // 只读取 CC2530 RF 寄存器（不发 RFST 指令，让 MAC 层自己管理 RF 状态机）
+  // 修复 BDB commissioning mode 后，MAC 层应自己启动 RX，FSMSTAT1 应非零
+  // - FSMSTAT1: bit0=RX_ACTIVE, bit2=LOCK_STATUS(频率锁定), bit4=CCA, bit5=SFD
+  // - FREQCTRL: 值=11+channel，=0 说明信道未配置
+  // - RSSISTAT bit0=RSSI_VALID：RF 接收链路已稳定
+  // - RSSI：8位有符号数，dBm = RSSI + (-61)  [CC2530 srf04 RSSI_OFFSET]
+  if (events & DIYRuZRT_EVT_RSSI)
+  {
+    char buf[96];
+    uint8 bp = 0;
+    int8 rssi_raw;
+    int16 rssi_dbm;
+    uint8 valid, fsm, freq;
+    const char *p;
+
+    s_rssi_evt_count++;  // 递增计数器
+
+    fsm = (uint8)FSMSTAT1;
+    freq = (uint8)FREQCTRL;
+    valid = (uint8)(RSSISTAT & 0x01);
+    rssi_raw = (int8)RSSI;
+    /* CC2530 RSSI_OFFSET = -61（见 srf04/mac_radio_defs.h HAL_MAC_RSSI_OFFSET） */
+    rssi_dbm = (int16)rssi_raw - 61;
+
+    /* 格式化: [DIY] RSSI inv raw=0xXX dBm=-XXX fsm_b=0xXX fsm_a=0xXX freq=0xXX\r\n */
+    p = "[DIY] RSSI ";
+    while (*p) buf[bp++] = *p++;
+    p = valid ? "v" : "inv";
+    while (*p) buf[bp++] = *p++;
+    p = " raw=0x";
+    while (*p) buf[bp++] = *p++;
+    { uint8 v = (uint8)rssi_raw;
+      uint8 hi = (v >> 4) & 0x0F, lo = v & 0x0F;
+      buf[bp++] = (hi < 10) ? ('0'+hi) : ('A'+hi-10);
+      buf[bp++] = (lo < 10) ? ('0'+lo) : ('A'+lo-10);
+    }
+    p = " dBm=";
+    while (*p) buf[bp++] = *p++;
+    if (rssi_dbm < 0) { buf[bp++] = '-'; rssi_dbm = -rssi_dbm; }
+    else { buf[bp++] = '+'; }
+    if (rssi_dbm >= 100) { buf[bp++] = '0' + (uint8)(rssi_dbm / 100); rssi_dbm %= 100; }
+    if (rssi_dbm >= 10) { buf[bp++] = '0' + (uint8)(rssi_dbm / 10); rssi_dbm %= 10; }
+    buf[bp++] = '0' + (uint8)rssi_dbm;
+    p = " fsm=0x";
+    while (*p) buf[bp++] = *p++;
+    { uint8 v = fsm;
+      uint8 hi = (v >> 4) & 0x0F, lo = v & 0x0F;
+      buf[bp++] = (hi < 10) ? ('0'+hi) : ('A'+hi-10);
+      buf[bp++] = (lo < 10) ? ('0'+lo) : ('A'+lo-10);
+    }
+    p = " freq=0x";
+    while (*p) buf[bp++] = *p++;
+    { uint8 v = freq;
+      uint8 hi = (v >> 4) & 0x0F, lo = v & 0x0F;
+      buf[bp++] = (hi < 10) ? ('0'+hi) : ('A'+hi-10);
+      buf[bp++] = (lo < 10) ? ('0'+lo) : ('A'+lo-10);
+    }
+    buf[bp++] = '\r'; buf[bp++] = '\n';
+    HalUARTWrite(DIY_LOG_PORT, (uint8*)buf, bp);
+
+    return events ^ DIYRuZRT_EVT_RSSI;
   }
 
   // событие опроса кнопок

@@ -239,6 +239,54 @@
 // Инициализация RF-frontend усилителя
 #if defined HAL_PA_LNA || defined HAL_PA_LNA_CC2590 || \
     defined HAL_PA_LNA_SE2431L || defined HAL_PA_LNA_CC2592
+
+// CC2530+RFX2401C/CC2591 PA/LNA 引脚定义
+// HGM (High Gain Mode): P0_7
+// PA Enable: P1_1  (CC2530+CC2591EM 参考设计使用 P1_1)
+// LNA Enable: P1_0  (CC2530+CC2591EM 参考设计使用 P1_0)
+#define HGM_BASE   GPIO_A_BASE
+#define HGM_PIN    GPIO_PIN_7
+#define HAL_BOARD_PA_LNA_INIT()  st( P0DIR |= BV(7); )  /* P0_7 output for HGM */
+
+// ====== OBSSEL 观察信号多路复用器配置 ======
+// CC2530 通过 OBSSEL 寄存器将内部 RF 信号（PA/LNA 使能）路由到物理引脚
+// OBSSEL0→P1_0, OBSSEL1→P1_1, OBSSEL2→P1_2, OBSSEL3→P1_3, ...
+//
+// Z-Stack 默认: OBSSEL2(P1_2)=LNA_EN, OBSSEL3(P1_3)=PA_EN
+// SE ZB Module: P1_0/P1_1 未暴露在连接器上，推断为 PA/LNA 控制脚
+//   → OBSSEL0(P1_0)=LNA_EN, OBSSEL1(P1_1)=PA_EN
+//
+// 注意: 启用后 P1_0(RELAY1) 和 P1_1 被 OBSSEL 接管，继电器1 不可用
+//       仅在带 PA/LNA 模块测试时启用，86 开关裸模块需关闭 HAL_PA_LNA
+#define DIY_OBSSEL_LNA_REG   OBSSEL0   // LNA_EN → P1_0
+#define DIY_OBSSEL_PA_REG    OBSSEL1   // PA_EN  → P1_1
+
+// CC2530 兼容层：将 CC2538 风格的 GPIO API 映射到 CC2530 寄存器操作
+// mac_rffrontend.c 使用 GPIO_C_BASE+PIN_3=PA_EN, GPIO_C_BASE+PIN_2=LNA_EN
+// CC2530+CC2591/RFX2401C 实际引脚: P1_1=PA_EN, P1_0=LNA_EN
+// 因此让 GPIO_C_BASE 指向 Port1，PIN_3→BV(1)=P1_1, PIN_2→BV(0)=P1_0
+#define GPIO_A_BASE   0  // Port 0
+#define GPIO_B_BASE   1  // Port 1
+#define GPIO_C_BASE   1  // Port 1 (映射: CC2538的PC2/PC3 → CC2530的P1_0/P1_1)
+#define GPIO_PIN_0    BV(0)
+#define GPIO_PIN_1    BV(1)
+#define GPIO_PIN_2    BV(0)  // LNA_EN: CC2538的PC2 → CC2530的P1_0
+#define GPIO_PIN_3    BV(1)  // PA_EN:  CC2538的PC3 → CC2530的P1_1
+#define GPIO_PIN_4    BV(4)
+#define GPIO_PIN_5    BV(5)
+#define GPIO_PIN_6    BV(6)
+#define GPIO_PIN_7    BV(7)
+// GPIOPinTypeGPIOOutput: 设置指定引脚为输出
+#define GPIOPinTypeGPIOOutput(base, pin)  st( \
+  if((base)==0) P0DIR |= (pin); \
+  else if((base)==1) P1DIR |= (pin); \
+  else P2DIR |= (pin); )
+// GPIOPinWrite: 写指定引脚
+#define GPIOPinWrite(base, pin, val)  st( \
+  if((base)==0) { if(val) P0 |= (pin); else P0 &= ~(pin); } \
+  else if((base)==1) { if(val) P1 |= (pin); else P1 &= ~(pin); } \
+  else { if(val) P2 |= (pin); else P2 &= ~(pin); } )
+
 extern void MAC_RfFrontendSetup(void);
 #define HAL_BOARD_RF_FRONTEND_SETUP() MAC_RfFrontendSetup()
 #else
@@ -317,6 +365,10 @@ extern void DIYRuZRT_HalKeyInit( void );
                                                                  \
   /* set direction for GPIO outputs  */                          \
   LED1_DDR |= LED1_BV;                                           \
+                                                                 \
+  /* POWER_EN: P0_0 — PA/LNA 芯片供电使能 */                    \
+  P0DIR |= BV(0);                                                \
+  P0 |= BV(0);                                                   \
                                                                  \
   /* Set PA/LNA HGM control P0_7 */                              \
   P0DIR |= BV(7);                                                \

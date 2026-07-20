@@ -2227,6 +2227,15 @@ networkDesc_t* ZDApp_NwkDescListProcessing(void) {
         pNwkDesc = pNwkDesc->nextDesc;
     }
 
+    // [DIY] 诊断：输出发现的 beacon 数量
+    {
+      char _buf[24]; uint8 _i=0;
+      const char *_p = "\r\n[DIY] NwkDisc:beacons=";
+      while(*_p) _buf[_i++] = *_p++;
+      { uint8 v = ResultCount; if(v>=10){_buf[_i++]='0'+v/10;} _buf[_i++]='0'+v%10; }
+      HalUARTWrite(0, (uint8*)_buf, _i);
+    }
+
     // process discovery results
     stackProfilePro = FALSE;
     selected = FALSE;

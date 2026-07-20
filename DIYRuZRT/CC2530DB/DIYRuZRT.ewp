@@ -3474,6 +3474,9 @@
             <name>$PROJ_DIR$\..\Source\zcl_DIYRuZRT.c</name>
         </file>
         <file>
+            <name>$PROJ_DIR$\..\Source\diy_rf_test.c</name>
+        </file>
+        <file>
             <name>$PROJ_DIR$\..\Source\zcl_DIYRuZRT.h</name>
         </file>
         <file>

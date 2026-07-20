@@ -22,7 +22,7 @@
   its documentation for any purpose.
 
   YOU FURTHER ACKNOWLEDGE AND AGREE THAT THE SOFTWARE AND DOCUMENTATION ARE
-  PROVIDED �AS IS� WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+  PROVIDED �AS IS� WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESS OR IMPLIED,
   INCLUDING WITHOUT LIMITATION, ANY WARRANTY OF MERCHANTABILITY, TITLE,
   NON-INFRINGEMENT AND FITNESS FOR A PARTICULAR PURPOSE. IN NO EVENT SHALL
   TEXAS INSTRUMENTS OR ITS LICENSORS BE LIABLE OR OBLIGATED UNDER CONTRACT,
@@ -306,15 +306,27 @@ MAC_INTERNAL_API void macRadioTurnOnPower(void)
 
     /* (Re-)Configure PA and LNA control signals to RF frontend chips.
     * Note that The register values are not retained during sleep.
+    *
+    * [DIY] OBSSEL 引脚可配置（hal_board_cfg_DIYRuZRT.h 中定义）
+    * 默认 Z-Stack: OBSSEL3(P1_3)=PA_EN, OBSSEL2(P1_2)=LNA_EN
+    * SE ZB Module: OBSSEL1(P1_1)=PA_EN, OBSSEL0(P1_0)=LNA_EN
     */
 
-    /* PC3 -> PAEN */
+    /* PAEN */
     RFC_OBS_CTRL0 = RFC_OBS_CTRL_LNAMIX_PD_INV;
+#ifdef DIY_OBSSEL_PA_REG
+    DIY_OBSSEL_PA_REG = OBSSEL_OBS_CTRL1;
+#else
     OBSSEL3       = OBSSEL_OBS_CTRL1;
+#endif
 
-    /* PC2 -> EN (LNA control) */
+    /* EN (LNA control) */
     RFC_OBS_CTRL1 = RFC_OBS_CTRL_PA_PD_INV;
+#ifdef DIY_OBSSEL_LNA_REG
+    DIY_OBSSEL_LNA_REG = OBSSEL_OBS_CTRL0;
+#else
     OBSSEL2       = OBSSEL_OBS_CTRL0;
+#endif
     
   }
 #endif /* defined MAC_RUNTIME_CC2591 || ... || defined HAL_PA_LNA_CC2592 */

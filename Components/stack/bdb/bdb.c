@@ -44,6 +44,7 @@
 #include "bdb.h"
 #include "ZDApp.h"
 #include "OSAL.h"
+#include "hal_uart.h"
 #include "ZDConfig.h"
 #include "hal_led.h"
 #include "ZDObject.h"
@@ -1567,6 +1568,15 @@ void bdb_filterNwkDisc(void) {
     while (pNwkDesc) {
         ResultCount++;
         pNwkDesc = pNwkDesc->nextDesc;
+    }
+
+    // [DIY] 诊断：BDB 过滤前的 beacon 数量
+    {
+      char _buf[24]; uint8 _i=0;
+      const char *_p = "\r\n[DIY] BDB:beacons=";
+      while(*_p) _buf[_i++] = *_p++;
+      { uint8 v = ResultCount; if(v>=10){_buf[_i++]='0'+v/10;} _buf[_i++]='0'+v%10; }
+      HalUARTWrite(0, (uint8*)_buf, _i);
     }
 
     if(pBDBListNwk) {
